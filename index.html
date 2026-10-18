@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JONGO HUB INTERNSHIP ATTENDANCE MANAGEMENT SYSTEM</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-content">
+        <div class="brand">
+          <button class="brand-home" id="brandHomeBtn" type="button" aria-label="Go to home">
+            <img class="brand-logo" src="LOGO.jpeg" alt="" />
+          </button>
+          <h1>
+            <span class="brand-title">JONGO HUB</span>
+            <span class="brand-subtitle">INTERNSHIP ATTENDANCE MANAGEMENT SYSTEM</span>
+          </h1>
+          <div class="brand-partners">
+            <div class="brand-partnership" aria-label="In collaboration with LEO-BOT TECH COMPANY">
+              <img class="brand-partnership__logo" src="LEO-BOT%20SEAL.jpeg" alt="LEO-BOT Tech Company seal" />
+              <div class="brand-partnership__copy">
+                <span>IN COLLABORATION WITH</span>
+                <strong>LEO-BOT TECH COMPANY</strong>
+              </div>
+            </div>
+            <div class="brand-partnership" aria-label="In collaboration with RHIBMS University">
+              <img class="brand-partnership__logo" src="RHIBMS%20LOGO.png" alt="RHIBMS University logo" />
+              <div class="brand-partnership__copy">
+                <span>IN COLLABORATION WITH</span>
+                <strong>RHIBMS UNIVERSITY</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="user-panel">
+          <button class="secondary-btn" id="themeToggle" type="button" aria-label="Toggle dark mode">Dark</button>
+          <button class="secondary-btn" id="viewAttendanceBtn" type="button">View Attendance</button>
+          <button class="secondary-btn hidden" id="adminSettingsBtn" type="button">Settings</button>
+          <button class="user-chip" id="adminNameDisplay" type="button" aria-label="Guest access">Guest</button>
+          <button class="secondary-btn" id="logoutBtn" type="button">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="homeSection" class="home-page">
+        <div class="home-page__brand">
+          <img src="LOGO.jpeg" alt="JONGO HUB logo" />
+          <h2>JONGO HUB</h2>
+          <p class="home-page__system-name">INTERNSHIP ATTENDANCE MANAGEMENT SYSTEM</p>
+          <p class="home-page__description">Daily attendance and intern records, together in one place.</p>
+          <div class="home-page__actions">
+            <button class="primary-btn" id="homeViewAttendanceBtn" type="button">View Daily Attendance</button>
+            <button class="secondary-btn" id="homeAdminLoginBtn" type="button">Admin Login</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="authSection" class="auth-layout hidden">
+        <button class="secondary-btn auth-home-btn" id="authHomeBtn" type="button">Back to Home</button>
+        <div class="card">
+          <h2>Admin Login</h2>
+          <form id="loginForm" class="form-grid">
+            <div class="input-row">
+              <label for="loginUsername">Username or Full Name</label>
+              <input id="loginUsername" type="text" placeholder="Enter username or full name" required />
+            </div>
+            <div class="input-row">
+              <label for="loginPassword">Password</label>
+              <div class="password-wrapper">
+                <input id="loginPassword" type="password" placeholder="Enter password" required />
+                <button type="button" class="toggle-password" data-target="loginPassword">Show</button>
+              </div>
+            </div>
+            <button class="primary-btn" type="submit">Login</button>
+            <div id="loginMessage" class="notice" style="display: none;"></div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Admin Signup</h2>
+          <form id="signupForm" class="form-grid">
+            <div class="input-row">
+              <label for="signupName">Full Name</label>
+              <input id="signupName" type="text" placeholder="Your full name" required />
+            </div>
+            <div class="input-row">
+              <label for="signupUsername">Username</label>
+              <input id="signupUsername" type="text" placeholder="Choose username" required />
+            </div>
+            <p class="field-hint">Your full name and username will appear in your admin profile when you log in.</p>
+            <div class="input-row">
+              <label for="signupPassword">Password</label>
+              <div class="password-wrapper">
+                <input id="signupPassword" type="password" placeholder="Minimum 6 characters" required />
+                <button type="button" class="toggle-password" data-target="signupPassword">Show</button>
+              </div>
+            </div>
+            <div class="input-row">
+              <label for="signupConfirmPassword">Confirm Password</label>
+              <div class="password-wrapper">
+                <input id="signupConfirmPassword" type="password" placeholder="Repeat password" required />
+                <button type="button" class="toggle-password" data-target="signupConfirmPassword">Show</button>
+              </div>
+            </div>
+            <button class="primary-btn" type="submit">Create Admin Account</button>
+            <div id="signupMessage" class="notice" style="display: none;"></div>
+          </form>
+        </div>
+      </section>
+
+      <section id="dashboardSection" class="hidden">
+        <div class="page-banner">
+          <h2>Admin Dashboard</h2>
+          <p>Update and track daily attendance for interns at JONGO HUB.</p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="label">Total Interns</div>
+            <div class="value" id="totalInternsValue">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Present</div>
+            <div class="value" id="presentCountValue">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Late</div>
+            <div class="value" id="lateCountValue">0</div>
+          </div>
+          <div class="stat-card">  
+            <div class="label">Absent</div>
+            <div class="value" id="absentCountValue">0</div>
+          </div>
+        </div>
+
+        <div class="card" id="adminApprovalSection" style="margin-bottom: 22px;">
+          <h3>Admin Signup Requests</h3>
+          <p>Approve requests before new admins can log in.</p>
+          <div class="notice" id="approvalEmptyState">No pending signup requests.</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Username</th>
+                  <th>Requested</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>     
+              <tbody id="pendingAdminTableBody"></tbody>
+            </table> 
+          </div>
+        </div>
+
+        <div class="dashboard-layout">
+          <div class="card">    
+            <h3>Daily Attendance Update</h3>
+            <form id="attendanceForm">
+              <div class="inline-form">
+                <div class="input-row" style="min-width: 200px; flex: 1;">
+                  <label for="attendanceDate">Select Date</label>
+                  <input id="attendanceDate" type="date" required />
+                </div>
+                <button class="primary-btn" type="submit">Save Attendance</button>
+                <button class="secondary-btn" id="saveAttendancePdfBtn" type="button" disabled>Save Daily Attendance PDF</button>
+                <button class="secondary-btn" id="downloadAttendanceCsvBtn" type="button" disabled>Download CSV</button>
+              </div>
+
+              <div class="attendance-roster" aria-live="polite">
+                <section class="attendance-roster__column">
+                  <h4>Present Students</h4>
+                  <ul id="presentStudentsList"></ul>
+                </section>
+                <section class="attendance-roster__column">
+                  <h4>Absent Students</h4>
+                  <ul id="absentStudentsList"></ul>
+                </section>
+              </div>
+
+              <div class="table-wrap">
+                <table class="attendance-table">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Name</th>
+                      <th>Department</th>
+                      <th>ID</th>
+                      <th>Status</th>
+                      <th>Absence Reason</th>
+                      <th>Current</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="internsTableBody"></tbody>
+                </table>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>Add Intern</h3>
+            <form id="addInternForm" class="form-grid">
+              <div class="input-row">
+                <label for="internName">Intern Name</label>
+                <input id="internName" type="text" placeholder="Full name" maxlength="100" required />
+              </div>
+              <div class="input-row">
+                <label for="internDepartment">Department</label>
+                <input id="internDepartment" type="text" placeholder="Department" maxlength="100" required />
+              </div>
+              <button class="primary-btn" type="submit">Add Intern</button>
+            </form>
+
+            <div class="notice" id="statusSummary" style="margin-top: 16px;">
+              Attendance summary will appear here.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="adminSettingsSection" class="settings-page hidden">
+        <div class="public-view__topbar">
+          <div class="page-banner">
+            <h2>Admin Settings</h2>
+            <p>Manage your account and appearance preferences.</p>
+          </div>
+          <button class="secondary-btn" id="returnFromSettingsBtn" type="button">Back to Dashboard</button>
+        </div>
+
+        <div class="settings-grid">
+          <section class="card">
+            <h3>Admin Profile</h3>
+            <p class="muted-copy">Your saved password is masked. Verify it below to update your credentials.</p>
+            <form id="settingsProfileForm" class="form-grid">
+              <div class="input-row">
+                <label for="settingsName">Full Name</label>
+                <input id="settingsName" type="text" required />
+              </div>
+              <div class="input-row">
+                <label for="settingsUsername">Username</label>
+                <input id="settingsUsername" type="text" required />
+              </div>
+              <div class="input-row">
+                <label for="settingsSavedPassword">Saved Password</label>
+                <div class="password-wrapper">
+                  <input id="settingsSavedPassword" type="password" autocomplete="off" readonly />
+                  <button type="button" class="toggle-password" data-target="settingsSavedPassword">Show</button>
+                </div>
+              </div>
+              <div class="input-row">
+                <label for="settingsCurrentPassword">Verify Current Password</label>
+                <div class="password-wrapper">
+                  <input id="settingsCurrentPassword" type="password" autocomplete="current-password" placeholder="Enter current password" required />
+                  <button type="button" class="toggle-password" data-target="settingsCurrentPassword">Show</button>
+                </div>
+              </div>
+              <div class="input-row">
+                <label for="settingsNewPassword">New Password</label>
+                <div class="password-wrapper">
+                  <input id="settingsNewPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep current password" />
+                  <button type="button" class="toggle-password" data-target="settingsNewPassword">Show</button>
+                </div>
+              </div>
+              <div class="input-row">
+                <label for="settingsConfirmPassword">Confirm New Password</label>
+                <div class="password-wrapper">
+                  <input id="settingsConfirmPassword" type="password" autocomplete="new-password" />
+                  <button type="button" class="toggle-password" data-target="settingsConfirmPassword">Show</button>
+                </div>
+              </div>
+              <button class="primary-btn" type="submit">Save Profile</button>
+              <div id="settingsProfileMessage" class="notice" style="display: none;"></div>
+            </form>
+          </section>
+
+          <section class="card">
+            <h3>Appearance</h3>
+            <div class="input-row">
+              <span class="field-label">Theme</span>
+              <div class="segmented-control" role="group" aria-label="Color theme">
+                <button id="settingsLightThemeBtn" type="button" aria-pressed="false">Light</button>
+                <button id="settingsDarkThemeBtn" type="button" aria-pressed="false">Dark</button>
+              </div>
+            </div>
+            <div class="input-row accent-setting">
+              <label for="accentColorInput">Accent Color</label>
+              <input id="accentColorInput" type="color" value="#1d4ed8" />
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="publicViewSection" class="public-view hidden">
+        <div class="public-view__topbar">
+          <div class="page-banner">
+            <h2>Attendance Dashboard</h2>
+            <p>Daily attendance records for JONGO HUB interns.</p>
+          </div>
+          <button class="secondary-btn" id="returnFromPublicBtn" type="button">Back to Login</button>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="label">Total Students</div>
+            <div class="value" id="publicTotalValue">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Present</div>
+            <div class="value" id="publicPresentValue">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Late</div>
+            <div class="value" id="publicLateValue">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Absent</div>
+            <div class="value" id="publicAbsentValue">0</div>
+          </div>
+        </div>
+
+        <div class="public-view__records">
+          <div class="inline-form">
+            <div class="input-row" style="min-width: 220px; flex: 1;">
+              <label for="publicDate">Choose Date</label>
+              <input id="publicDate" type="date" />
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="attendance-table">
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Name</th>
+                  <th>Department</th>
+                  <th>Intern ID</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="publicTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-footer__content">
+        <div class="site-footer__brand">
+          <img class="site-footer__logo site-footer__logo--brand" src="LOGO.jpeg" alt="JONGO HUB logo" />
+          <div>
+            <strong>JONGO HUB</strong>
+            <span>Internship Attendance Management System</span>
+          </div>
+        </div>
+        <div class="site-footer__collaboration">
+          <img class="site-footer__logo" src="LEO-BOT%20SEAL.jpeg" alt="LEO-BOT Tech Company logo" />
+          <div>
+            <span>In collaboration with</span>
+            <strong>LEO-BOT TECH COMPANY</strong>
+          </div>
+        </div>
+        <div class="site-footer__collaboration">
+          <img class="site-footer__logo" src="RHIBMS%20LOGO.png" alt="RHIBMS University logo" />
+          <div>
+            <span>In collaboration with</span>
+            <strong>RHIBMS UNIVERSITY</strong>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>
