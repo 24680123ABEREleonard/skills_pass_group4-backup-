@@ -15,14 +15,14 @@ The request handling and application logic are in [`index.php`](./index.php); th
 ## Deploy on Railway
 
 1. Create a Railway project from this repository. Railway will build the root `Dockerfile` and provide the web service's `PORT`.
-2. Add a Railway MySQL service and import [`database.sql`](./database.sql) into its database.
+2. Add a Railway MySQL service and import [`database.sql`](./database.sql). It creates and selects a database named `skillpass`.
 3. In the PHP service, add these variables using references to the MySQL service. Replace `MySQL` with that service's exact name if needed:
 
 	| Variable | Railway reference |
 	| --- | --- |
 	| `DB_HOST` | `${{MySQL.MYSQLHOST}}` |
 	| `DB_PORT` | `${{MySQL.MYSQLPORT}}` |
-	| `DB_NAME` | `${{MySQL.MYSQLDATABASE}}` |
+	| `DB_NAME` | `skillpass` |
 	| `DB_USER` | `${{MySQL.MYSQLUSER}}` |
 	| `DB_PASSWORD` | `${{MySQL.MYSQLPASSWORD}}` |
 
