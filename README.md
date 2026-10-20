@@ -2,6 +2,8 @@
 
 SkillPass is a PHP, HTML, CSS, and JavaScript skills-first hiring demo. Jobseekers build profiles with skills and project evidence, apply for openings, submit practical challenges, and track application updates. Employers post roles, compare applicants against job-related evidence, review challenges, and shortlist candidates.
 
+The request handling and application logic are in [`index.php`](./index.php); the rendered page markup is in [`views/app.php`](./views/app.php), and presentation styles are maintained separately in [`style.css`](./style.css). The view uses PHP only for dynamic, escaped values and role-specific content.
+
 ## Run with XAMPP
 
 1. Start **Apache** and **MySQL** in the XAMPP Control Panel.

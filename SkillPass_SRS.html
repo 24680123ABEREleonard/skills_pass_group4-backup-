@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkillPass | Software Requirements Specification</title>
+<style>
+:root { --ink:#1d2d37; --muted:#586a73; --green:#17664f; --pale:#eef5f0; --line:#ccd8d2; --blue:#eaf1f4; --white:#fff; }
+* { box-sizing:border-box; }
+html { font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); font-size:10pt; line-height:1.48; }
+body { margin:0; background:#fff; }
+@page { size:A4; margin:17mm 18mm 24mm; }
+@page:first { margin:0; }
+h1,h2,h3,h4 { color:var(--ink); page-break-after:avoid; }
+h1 { font-size:28pt; line-height:1.08; margin:0 0 10mm; }
+h2 { font-size:17pt; margin:10mm 0 4mm; padding-bottom:2mm; border-bottom:1px solid var(--line); }
+h3 { font-size:12pt; margin:6mm 0 2mm; }
+h4 { font-size:10.5pt; margin:4mm 0 1.5mm; }
+p { margin:0 0 3mm; }
+ul,ol { margin:1.5mm 0 4mm; padding-left:7mm; }
+li { margin:0 0 1.2mm; }
+table { width:100%; border-collapse:collapse; margin:3mm 0 5mm; font-size:8.8pt; page-break-inside:auto; }
+thead { display:table-header-group; }
+tr { page-break-inside:avoid; }
+th,td { border:1px solid var(--line); padding:2.1mm 2.3mm; vertical-align:top; text-align:left; }
+th { background:var(--pale); color:#234b3c; font-weight:700; }
+code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
+.cover { min-height:297mm; padding:34mm 25mm 25mm; display:flex; flex-direction:column; justify-content:space-between; color:var(--white); background:linear-gradient(145deg,#173e36 0%,#17664f 60%,#3d8066 100%); page-break-after:always; }
+.cover .brand { font-size:12pt; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
+.cover .brand-mark { display:inline-grid; width:11mm; height:11mm; place-items:center; margin-right:2mm; border:1px solid rgba(255,255,255,.65); border-radius:3mm 3mm 3mm 1mm; font-size:16pt; }
+.cover .title-block { margin-top:25mm; }
+.cover .kicker { color:#d6ebdf; font-size:10pt; letter-spacing:2px; font-weight:700; text-transform:uppercase; }
+.cover h1 { max-width:150mm; margin:5mm 0; color:#fff; font-size:37pt; }
+.cover .subtitle { max-width:130mm; color:#e3eee7; font-size:14pt; }
+.cover .meta { display:grid; grid-template-columns:1fr 1fr; gap:4mm; max-width:140mm; border-top:1px solid rgba(255,255,255,.4); padding-top:5mm; }
+.cover .meta span { display:block; color:#d6e8df; font-size:8.5pt; }
+.cover .meta strong { display:block; margin-top:1mm; font-size:10pt; color:#fff; }
+.cover .foot { color:#d6e8df; font-size:9pt; }
+.callout { margin:3mm 0 5mm; padding:3mm 4mm; border-left:3px solid var(--green); background:var(--pale); }
+.callout strong { color:#234b3c; }
+.note { color:var(--muted); font-size:9pt; }
+.small { font-size:8.5pt; }
+.contents { page-break-after:always; }
+.contents ol { columns:2; column-gap:12mm; padding-left:6mm; }
+.contents li { break-inside:avoid; margin-bottom:2mm; }
+.section { page-break-before:always; }
+.section.first { page-break-before:auto; }
+.subsection { page-break-inside:avoid; }
+.req td:first-child { width:22mm; white-space:nowrap; font-weight:700; color:#234b3c; }
+.req td:nth-child(2) { width:35mm; }
+.status { display:inline-block; padding:.5mm 1.5mm; border:1px solid #b8d3c5; border-radius:2mm; background:var(--pale); color:#285d45; font-size:8pt; font-weight:700; }
+.flow { padding:3mm 4mm; background:#f4f7f8; border:1px solid var(--line); font-family:Consolas, monospace; font-size:8.5pt; white-space:pre-wrap; }
+.endnote { margin-top:10mm; padding-top:3mm; border-top:1px solid var(--line); color:var(--muted); font-size:8pt; }
+.page-footer { display:none; }
+@media print { .page-footer { position:fixed; right:18mm; bottom:7mm; left:18mm; display:block; border-top:1px solid #ccd8d2; padding-top:2mm; color:#586a73; font-size:8pt; text-align:center; } }
+@media screen { body { max-width:210mm; margin:10mm auto; padding:0 16mm 20mm; box-shadow:0 2px 18px #ccd4d0; } .cover { margin:0 -16mm; padding-left:25mm; padding-right:25mm; } }
+</style>
+</head>
+<body>
+<section class="cover">
+  <div class="brand"><span class="brand-mark">S</span>SkillPass</div>
+  <div class="title-block">
+    <div class="kicker">Software Requirements Specification</div>
+    <h1>Skills-first hiring, made inspectable.</h1>
+    <p class="subtitle">A detailed baseline specification for the SkillPass web application.</p>
+  </div>
+  <div class="meta">
+    <div><span>Document version</span><strong>2.0</strong></div>
+    <div><span>Prepared</span><strong>20 October 2026</strong></div>
+    <div><span>Specification basis</span><strong>Current project implementation</strong></div>
+    <div><span>Document status</span><strong>Project baseline</strong></div>
+  </div>
+  <div class="foot">Project: SkillPass | PHP, MySQL, HTML, CSS and JavaScript</div>
+</section>
+
+<section class="contents">
+  <h2>Document Map</h2>
+  <ol>
+    <li>Introduction</li><li>Product Overview</li><li>Users and Operating Context</li><li>System Workflows</li>
+    <li>Functional Requirements</li><li>External Interface Requirements</li><li>Data Requirements</li><li>Business Rules and Matching</li>
+    <li>Non-Functional Requirements</li><li>Security and Privacy Requirements</li><li>Acceptance Criteria</li><li>Assumptions, Dependencies and Limits</li>
+    <li>Future Scope</li><li>Glossary</li><li>Traceability Summary</li>
+  </ol>
+  <div class="callout"><strong>Specification status:</strong> This document describes the behavior present in the supplied SkillPass project as inspected on the preparation date. Requirements marked “Implemented” are traceable to the current PHP application, SQL schema, or README. Any future capability is explicitly identified as not part of the current baseline.</div>
+  <h3>Revision History</h3>
+  <table><thead><tr><th>Version</th><th>Date</th><th>Change</th></tr></thead><tbody><tr><td>2.0</td><td>20 October 2026</td><td>Updated the document version and added the collaboration footer to every page.</td></tr></tbody></table>
+  <h3>Intended Readers</h3>
+  <p>Project stakeholders, developers, testers, reviewers, maintainers, and operators responsible for installing or evaluating SkillPass.</p>
+</section>
+
+<section class="section first">
+<h2>1. Introduction</h2>
+<h3>1.1 Purpose</h3>
+<p>This Software Requirements Specification (SRS) defines the functional behavior, interfaces, data, constraints, quality expectations, and acceptance conditions for SkillPass. It serves as a shared reference for implementing, testing, demonstrating, and maintaining the project.</p>
+<h3>1.2 Product Scope</h3>
+<p>SkillPass is a browser-based, skills-first hiring demonstration platform. Jobseekers maintain a profile of self-reported skills and project evidence, browse open roles, apply, complete an optional role-specific practical challenge, and follow application status. Employers create and manage openings, inspect applicants’ relevant evidence, review challenge submissions, compare candidates using a transparent role-fit score, and update application outcomes.</p>
+<p>Public visitors can view the home page and open opportunities, then register or sign in. The project is delivered as a PHP application backed by MySQL/MariaDB and is documented for local operation with XAMPP.</p>
+<h3>1.3 Goals</h3>
+<ul>
+<li>Give candidates a structured place to present skills and examples of work.</li>
+<li>Make job requirements and applicant comparisons legible to employers.</li>
+<li>Support a practical challenge as optional, job-related evidence.</li>
+<li>Keep the hiring decision under employer control; the score is advisory and not an automated decision.</li>
+<li>Provide a usable responsive interface for desktop and mobile browser widths.</li>
+</ul>
+<h3>1.4 Intended Use and Conventions</h3>
+<p>“Shall” denotes a required system behavior in this baseline. “Implemented” indicates behavior observed in the project. Character limits and enumerated values reflect current server-side validation or database constraints where available. “Out of scope” means the current project does not provide the capability; it is not a commitment that the capability will never be added.</p>
+<h3>1.5 References</h3>
+<ul><li>SkillPass project README and setup instructions.</li><li>Application routing, request handling, and page rendering in <code>index.php</code>.</li><li>Database structure and demonstration seed records in <code>database.sql</code>.</li><li>Session, database, validation, and CSRF helpers in <code>config.php</code>.</li><li>Responsive styles in <code>style.css</code> and navigation/confirmation behavior in <code>app.js</code>.</li></ul>
+
+<h2>2. Product Overview</h2>
+<h3>2.1 Product Perspective</h3>
+<p>SkillPass is a server-rendered web application. A single PHP entry point handles GET page selection and POST actions, reads/writes MySQL through PDO, renders HTML, and uses session state for authentication and one-time flash messages. Client-side JavaScript is limited to responsive navigation toggling and confirmation prompts on forms that opt into confirmation. CSS provides layout, visual presentation, and responsive breakpoints.</p>
+<h3>2.2 Product Functions</h3>
+<ul>
+<li>Public home and public open-role listing.</li><li>Account registration, sign-in, and sign-out for jobseeker and employer roles.</li>
+<li>Jobseeker profile editing, skill list maintenance, and project evidence records.</li><li>Open-role browsing, application submission, challenge response submission, and application tracking.</li>
+<li>Employer role creation, optional skill requirements and practical challenge, opening status management, applicant review, challenge review, and application status management.</li>
+<li>Candidate comparison using required-skill overlap, project count, and challenge status.</li>
+<li>Role-specific dashboards, profile completion indicator, demand-based skill insight, and a WhatsApp contact link.</li>
+</ul>
+<h3>2.3 User Classes</h3>
+<table><thead><tr><th>User class</th><th>Primary goals</th><th>Access boundary</th></tr></thead><tbody>
+<tr><td>Public visitor</td><td>Learn about SkillPass; inspect open roles; register or sign in.</td><td>Public home, login, registration, and open-opportunities listing. Cannot submit an application without a jobseeker account.</td></tr>
+<tr><td>Jobseeker</td><td>Build a profile, find roles, apply, complete challenges, and track outcomes.</td><td>Own profile and projects; public open roles; own applications and submissions. Cannot access employer management views.</td></tr>
+<tr><td>Employer</td><td>Publish openings, review role applicants and evidence, and progress applications.</td><td>Own job openings and their applicants/submissions. Cannot access jobseeker-only profile-management or application pages.</td></tr>
+<tr><td>System operator</td><td>Configure the local runtime and database; maintain deployment.</td><td>Operational access outside the product UI. No administrative user role or admin console is defined.</td></tr>
+</tbody></table>
+
+<h2>3. Users and Operating Context</h2>
+<h3>3.1 Runtime Environment</h3>
+<ul>
+<li>Server: PHP 8.0 or later (required by the language features in use), with PDO MySQL and the mbstring extension.</li>
+<li>Database: MySQL or compatible MariaDB with InnoDB, foreign keys, ENUM types, UTF-8 (utf8mb4), and the SQL features used by the schema.</li>
+<li>Local reference stack: XAMPP with Apache and MySQL; schema/database name defaults to <code>skillpass</code>.</li>
+<li>Client: a modern browser supporting HTML5 forms, CSS Grid/Flexbox, responsive media queries, and JavaScript.</li>
+<li>Configuration: database host, port, name, username, and password may be supplied with <code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_NAME</code>, <code>DB_USER</code>, and <code>DB_PASSWORD</code>, or changed in <code>config.php</code>.</li>
+</ul>
+<h3>3.2 General Constraints</h3>
+<ul>
+<li>The user interface and server-side workflows are currently provided in English.</li>
+<li>Each account has exactly one role: <code>jobseeker</code> or <code>employer</code>.</li>
+<li>The application uses a single PHP entry point and a relational database; no API contract or separate service tier is specified.</li>
+<li>Project and submission evidence are external HTTP/HTTPS links; file upload/storage is not implemented.</li>
+<li>System availability, backups, production hosting, and operational service-level targets are not established by this demo.</li>
+</ul>
+
+<h2>4. System Workflows</h2>
+<h3>4.1 Jobseeker Workflow</h3>
+<div class="flow">Public home / open roles
+  -> Register as jobseeker or sign in
+  -> Review dashboard and open roles
+  -> Maintain profile, skills, and project evidence
+  -> Apply once to an open role, with optional cover note
+  -> If the role has a challenge, submit response and optional evidence URL
+  -> Track application and challenge feedback/status
+  -> Employer may shortlist; contact link becomes available to employer</div>
+<h3>4.2 Employer Workflow</h3>
+<div class="flow">Register as employer or sign in
+  -> Create an opening with title, company, location, work arrangement, description
+  -> Add zero or more required skills and optionally a title+instructions challenge
+  -> Review applicants ordered by role-fit score, then application time
+  -> Inspect profile, skills, project count, cover note, and challenge evidence
+  -> Review challenge as passed or needs work, with optional feedback
+  -> Set application status: in review, shortlisted, not selected, or hired
+  -> Close or reopen the opening</div>
+<h3>4.3 Public Visitor Workflow</h3>
+<p>A visitor can browse public open roles and sign in to apply. Registration creates an account, a blank profile record, and an authenticated session. The homepage offers a WhatsApp link to the configured SkillPass contact number.</p>
+
+<h2>5. Functional Requirements</h2>
+<p>All requirements below describe the current baseline unless explicitly marked otherwise.</p>
+<h3>5.1 Access and Authentication</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-AUTH-01</td><td>Must / Implemented</td><td>The system shall allow a visitor to register as either a jobseeker or employer using a name, email address, password, and selected role.</td></tr>
+<tr><td>FR-AUTH-02</td><td>Must / Implemented</td><td>Registration shall require a name of 2-120 characters, a valid email address, and a password of at least 8 characters. Email shall be unique case-insensitively after normalization to lowercase.</td></tr>
+<tr><td>FR-AUTH-03</td><td>Must / Implemented</td><td>Successful registration shall create the user and an initially blank profile atomically, then authenticate the new user.</td></tr>
+<tr><td>FR-AUTH-04</td><td>Must / Implemented</td><td>The system shall verify sign-in credentials against the stored password hash and shall not return the hash to the authenticated session.</td></tr>
+<tr><td>FR-AUTH-05</td><td>Must / Implemented</td><td>Successful sign-in and registration shall regenerate the session identifier. Sign-out shall clear the session and expire the session cookie.</td></tr>
+<tr><td>FR-AUTH-06</td><td>Must / Implemented</td><td>The system shall enforce role-specific page access and redirect unauthorized users to an allowed page or sign-in flow.</td></tr>
+<tr><td>FR-AUTH-07</td><td>Must / Implemented</td><td>Invalid credentials, duplicate email, invalid registration fields, and unauthorized access shall produce a user-facing error or redirect.</td></tr>
+</tbody></table>
+<h3>5.2 Jobseeker Profile and Evidence</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-PROF-01</td><td>Must / Implemented</td><td>A jobseeker shall be able to update headline (maximum 160 characters), location (maximum 120), summary (maximum 3,000), and a comma-separated skill list.</td></tr>
+<tr><td>FR-PROF-02</td><td>Must / Implemented</td><td>Saving skills shall normalize and de-duplicate skill names by generated slug, limit each skill name to 60 characters, and associate the resulting skills with the current jobseeker.</td></tr>
+<tr><td>FR-PROF-03</td><td>Must / Implemented</td><td>A jobseeker shall be able to add a project with required title (maximum 160 characters) and description (maximum 3,000 characters), and an optional HTTP/HTTPS evidence URL.</td></tr>
+<tr><td>FR-PROF-04</td><td>Must / Implemented</td><td>A jobseeker shall see their own profile, skills, and project records, ordered with newest projects first.</td></tr>
+<tr><td>FR-PROF-05</td><td>Should / Implemented</td><td>The dashboard shall show a profile-completion indicator weighted as headline 20%, location 15%, summary 25%, at least one skill 20%, and at least one project 20%.</td></tr>
+<tr><td>FR-PROF-06</td><td>Should / Implemented</td><td>The jobseeker opportunity view shall identify one in-demand skill absent from the user's profile, based on the count of open roles requiring each skill.</td></tr>
+</tbody></table>
+<h3>5.3 Opportunity Discovery and Applications</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-OPP-01</td><td>Must / Implemented</td><td>The system shall list open roles to public visitors and signed-in jobseekers, including role title, company, location, work arrangement, description, and required skills when present.</td></tr>
+<tr><td>FR-OPP-02</td><td>Must / Implemented</td><td>A signed-in jobseeker shall be able to apply to an open role with an optional cover note up to 2,000 characters.</td></tr>
+<tr><td>FR-OPP-03</td><td>Must / Implemented</td><td>The system shall reject applications to closed or missing roles and shall prevent a second application from the same jobseeker to the same role.</td></tr>
+<tr><td>FR-OPP-04</td><td>Must / Implemented</td><td>After submission, the system shall confirm success or explain that the role is no longer available or the jobseeker has already applied.</td></tr>
+<tr><td>FR-OPP-05</td><td>Must / Implemented</td><td>A jobseeker shall be able to view their own applications, application date, role details, cover note, and current status.</td></tr>
+<tr><td>FR-OPP-06</td><td>Should / Implemented</td><td>The dashboard shall show up to three recent applications and up to three open roles with a simple required-skill overlap percentage.</td></tr>
+</tbody></table>
+<h3>5.4 Practical Challenges</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-CHAL-01</td><td>Should / Implemented</td><td>An employer creating a role may define one optional challenge. If either challenge title or instructions are provided, both shall be present. Title is limited to 160 characters and instructions to 4,000.</td></tr>
+<tr><td>FR-CHAL-02</td><td>Should / Implemented</td><td>A jobseeker with an application to the role shall be able to submit a non-empty response (maximum 5,000 characters) and optional HTTP/HTTPS evidence URL while the role is open.</td></tr>
+<tr><td>FR-CHAL-03</td><td>Should / Implemented</td><td>A candidate shall have at most one submission record per challenge; resubmission shall replace the response and evidence, reset status to submitted, clear previous feedback, and update the submission timestamp.</td></tr>
+<tr><td>FR-CHAL-04</td><td>Should / Implemented</td><td>The owning employer shall be able to review a submitted response as passed or needs work and record optional feedback up to 1,500 characters.</td></tr>
+<tr><td>FR-CHAL-05</td><td>Should / Implemented</td><td>The jobseeker shall be able to see the challenge instructions, submission state, response, evidence link, and employer feedback in the application view.</td></tr>
+</tbody></table>
+<h3>5.5 Employer Role and Applicant Management</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-EMP-01</td><td>Must / Implemented</td><td>An employer shall be able to create an opening with required title, company, location, and description; selectable work arrangement shall be On-site, Hybrid, or Remote.</td></tr>
+<tr><td>FR-EMP-02</td><td>Must / Implemented</td><td>Role field limits shall be title 160, company 160, location 120, and description 5,000 characters. Required skills shall be optional and stored as normalized skill associations.</td></tr>
+<tr><td>FR-EMP-03</td><td>Must / Implemented</td><td>An employer shall only manage openings owned by their account. The employer shall be able to close or reopen each owned role.</td></tr>
+<tr><td>FR-EMP-04</td><td>Must / Implemented</td><td>An employer shall view applicants for an owned role, including application status, applied time, cover note, relevant profile details, skills, project count, and available challenge submission.</td></tr>
+<tr><td>FR-EMP-05</td><td>Must / Implemented</td><td>The system shall order candidate rows by descending role-fit score, with earlier application time first when scores are equal.</td></tr>
+<tr><td>FR-EMP-06</td><td>Must / Implemented</td><td>The employer shall be able to set application status to reviewing, shortlisted, declined, or hired for an application belonging to one of their roles.</td></tr>
+<tr><td>FR-EMP-07</td><td>Must / Implemented</td><td>The employer shall see a candidate's abbreviated name before shortlisting. The candidate's email/contact link shall be shown only when the application is shortlisted.</td></tr>
+<tr><td>FR-EMP-08</td><td>Should / Implemented</td><td>Employer dashboards shall show role counts, applicant totals, shortlist totals, and links to role applicant lists.</td></tr>
+</tbody></table>
+<h3>5.6 Navigation and Public Experience</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-UI-01</td><td>Must / Implemented</td><td>The public home page shall describe the skills-first workflow and provide links to open roles, registration, sign-in, and explanatory page sections.</td></tr>
+<tr><td>FR-UI-02</td><td>Must / Implemented</td><td>Navigation shall collapse to a toggle on small screens and expose its expanded state to assistive technology.</td></tr>
+<tr><td>FR-UI-03</td><td>Should / Implemented</td><td>The public interface shall provide a WhatsApp contact link to the configured SkillPass number.</td></tr>
+<tr><td>FR-UI-04</td><td>Must / Implemented</td><td>User-generated content shall be HTML-escaped when rendered in application pages.</td></tr>
+</tbody></table>
+
+<h2>6. External Interface Requirements</h2>
+<h3>6.1 User Interface</h3>
+<p>The UI shall provide role-appropriate navigation, labeled forms, inline validation constraints where practical, visible success/error feedback, status badges, and empty states. The layout shall adapt at desktop, tablet, and mobile widths. Candidate comparison shall present the fit score and its component evidence together, with an explicit note that the score is not an automatic hiring decision.</p>
+<h3>6.2 Hardware Interfaces</h3>
+<p>No specialized hardware interface is required. Users need a device capable of running a modern web browser and accessing the application server.</p>
+<h3>6.3 Software Interfaces</h3>
+<ul>
+<li>MySQL/MariaDB through PHP PDO MySQL.</li>
+<li>Web browser through HTTP/HTTPS using server-rendered HTML forms and pages.</li>
+<li>WhatsApp link through a browser navigation to <code>wa.me</code>; SkillPass does not integrate with the WhatsApp API.</li>
+<li>Evidence is linked through user-supplied HTTP/HTTPS URLs; the system does not fetch, scan, host, or validate the contents of linked resources.</li>
+</ul>
+<h3>6.4 Communications</h3>
+<p>Requests use standard browser HTTP form submissions. Mutating operations use POST and include a session-bound CSRF token. The application uses redirects after form actions for the user-facing flow. Production TLS termination and deployment networking are environment responsibilities and are not specified by this repository.</p>
+
+<h2>7. Data Requirements</h2>
+<h3>7.1 Core Entities</h3>
+<table><thead><tr><th>Entity</th><th>Purpose and key attributes</th><th>Relationships / constraints</th></tr></thead><tbody>
+<tr><td>users</td><td>Identity, normalized email, password hash, role, creation time.</td><td>Unique email; role is jobseeker or employer. Parent of profiles, skills, projects, jobs, applications, and challenge submissions.</td></tr>
+<tr><td>profiles</td><td>One headline, location, summary, and update time per user.</td><td>One-to-one with users; deleted with user.</td></tr>
+<tr><td>skills</td><td>Reusable skill name and normalized unique slug.</td><td>Many-to-many with users and jobs through join tables.</td></tr>
+<tr><td>user_skills</td><td>Association between jobseeker and a skill.</td><td>Composite primary key prevents duplicate association.</td></tr>
+<tr><td>projects</td><td>Candidate work title, description, optional evidence URL, creation time.</td><td>Many projects per user; deleted with user.</td></tr>
+<tr><td>jobs</td><td>Role owner, title, company, location, work type, description, open/closed state, creation time.</td><td>Many roles per employer; deleted with employer.</td></tr>
+<tr><td>job_skills</td><td>Required skill associations for a role.</td><td>Composite primary key; deleted with job or skill.</td></tr>
+<tr><td>challenges</td><td>Optional practical challenge title and instructions.</td><td>At most one challenge per job.</td></tr>
+<tr><td>applications</td><td>Jobseeker application, optional note, state, submission time.</td><td>Unique job + jobseeker pair; deleted with job or user.</td></tr>
+<tr><td>challenge_submissions</td><td>Candidate response, optional evidence, review state/note, timestamps.</td><td>Unique challenge + jobseeker pair; deleted with challenge or user.</td></tr>
+</tbody></table>
+<h3>7.2 Data Integrity</h3>
+<ul>
+<li>Primary and foreign keys shall preserve entity identity and associations.</li>
+<li>Deleting a parent user, job, or challenge cascades to dependent records where configured by the schema.</li>
+<li>Account registration shall use a database transaction for user and profile creation.</li>
+<li>Job creation shall use a database transaction for job, skill associations, and optional challenge creation.</li>
+<li>Profile and skill updates shall be committed together in a database transaction.</li>
+<li>Timestamps use database current time; application display dates use the PHP runtime timezone.</li>
+</ul>
+<h3>7.3 Retention and Backup</h3>
+<p>The project defines no retention schedule, data export, archival, backup, or restore workflow. These are deployment/operations decisions and require definition before production use.</p>
+
+<h2>8. Business Rules and Matching</h2>
+<h3>8.1 Application Statuses</h3>
+<table><thead><tr><th>Stored value</th><th>Display label</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>submitted</td><td>Submitted</td><td>Initial state assigned when an application is created.</td></tr><tr><td>reviewing</td><td>In review</td><td>Employer is reviewing the application.</td></tr><tr><td>shortlisted</td><td>Shortlisted</td><td>Candidate has advanced; employer contact link is exposed.</td></tr><tr><td>declined</td><td>Not selected</td><td>Employer has marked the application unsuccessful.</td></tr><tr><td>hired</td><td>Hired</td><td>Employer has marked the candidate as hired.</td></tr>
+</tbody></table>
+<h3>8.2 Challenge Statuses</h3>
+<p>A challenge submission starts as <code>submitted</code>. The owning employer may change it to <code>passed</code> or <code>needs_work</code>. A resubmission resets the review state and clears prior reviewer feedback. Challenges are optional at job creation.</p>
+<h3>8.3 Role-Fit Score</h3>
+<p>The score is calculated per applicant and displayed on a 0-100 scale when all three evidence components are available. Current formula:</p>
+<div class="flow">skill_score     = (matched required skills / total required skills) * 70
+project_score   = min(number of candidate projects * 5, 20)
+challenge_score = 10 if passed; 5 if submitted; otherwise 0
+fit_score       = round(skill_score + project_score + challenge_score)</div>
+<ul>
+<li>Skill names are compared case-insensitively. Required skills are the denominator; candidate skills that are not required do not increase the score.</li>
+<li>If a role has no required skills, the skill component is zero. Therefore, a role without required skills may have a maximum score below 100.</li>
+<li>Project evidence is represented by project count, not a quality assessment or verification result; up to four projects contribute to this component.</li>
+<li>Challenge status contributes 10 for passed, 5 for submitted, and 0 for no submission or needs work.</li>
+<li>Candidate ranking is descending score; equal scores are ordered by earlier application timestamp.</li>
+<li>The score is a comparison aid only and shall not make or imply a hiring decision. It uses no demographic or personal-characteristic attributes.</li>
+</ul>
+<h3>8.4 Profile Completion and Opportunity Insight</h3>
+<p>The dashboard completion indicator uses fixed weights for presence of headline, location, summary, at least one skill, and at least one project. The opportunity insight selects a skill absent from the current profile that appears in the most open roles, with alphabetical ordering used to break equal-demand ties.</p>
+
+<h2>9. Non-Functional Requirements</h2>
+<table class="req"><thead><tr><th>ID</th><th>Quality</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>NFR-SEC-01</td><td>Security</td><td>Passwords shall be stored using PHP's password hashing API and verified using its password verification API; plaintext passwords shall not be stored.</td></tr>
+<tr><td>NFR-SEC-02</td><td>Security</td><td>Database reads and writes that include user input shall use PDO prepared statements. Dynamic SQL identifiers, such as candidate list placeholders, shall be generated from validated counts rather than user-supplied SQL.</td></tr>
+<tr><td>NFR-SEC-03</td><td>Security</td><td>All state-changing forms shall require a session CSRF token verified using a timing-safe comparison.</td></tr>
+<tr><td>NFR-SEC-04</td><td>Security</td><td>Output containing user-controlled values shall be HTML-escaped. External evidence links shall be limited to HTTP/HTTPS and opened with appropriate opener isolation.</td></tr>
+<tr><td>NFR-SEC-05</td><td>Security</td><td>Session cookies shall be HTTP-only, use SameSite=Lax, use secure transport when HTTPS is detected, and strict/only-cookie session settings shall be enabled.</td></tr>
+<tr><td>NFR-PRIV-01</td><td>Privacy</td><td>Candidate names shall be abbreviated on the employer applicant list until shortlisted; employer email contact shall only be rendered for shortlisted applications.</td></tr>
+<tr><td>NFR-USE-01</td><td>Usability</td><td>Forms shall provide clear labels, appropriate input types, and visible action feedback. The mobile navigation shall communicate expanded/collapsed state.</td></tr>
+<tr><td>NFR-RESP-01</td><td>Compatibility</td><td>Primary user journeys shall remain usable on narrow screens (minimum design width 320 CSS pixels) and common desktop viewport sizes.</td></tr>
+<tr><td>NFR-MAINT-01</td><td>Maintainability</td><td>Configuration shall permit database connection settings to be changed without changing core workflow logic.</td></tr>
+<tr><td>NFR-DATA-01</td><td>Integrity</td><td>Unique keys and foreign keys shall enforce uniqueness and relational constraints for account email, applications, skill links, challenges, and challenge submissions.</td></tr>
+<tr><td>NFR-PERF-01</td><td>Performance</td><td>No numeric latency, throughput, or concurrency target is defined by the current project. A production release shall establish measurable targets and test them against expected data volumes.</td></tr>
+<tr><td>NFR-AVAIL-01</td><td>Availability</td><td>No availability, disaster-recovery, backup-frequency, or recovery-time objective is defined by the current project.</td></tr>
+<tr><td>NFR-ACCESS-01</td><td>Accessibility</td><td>The UI shall preserve semantic HTML controls and labels and expose the navigation toggle state. Formal WCAG conformance is not claimed by the current project.</td></tr>
+</tbody></table>
+
+<h2>10. Security and Privacy Requirements</h2>
+<h3>10.1 Authorization</h3>
+<p>Each protected action shall require an authenticated session and a matching role. Employer-side updates shall additionally be scoped to a role owned by the current employer. Jobseeker profile and application reads shall be scoped to the current account. Public users shall not be able to invoke protected actions successfully.</p>
+<h3>10.2 Personal Data</h3>
+<p>The system stores name, email, password hash, role, profile details, skill associations, project evidence URLs, applications, challenge responses, and employer feedback. The employer applicant view limits candidate identity by abbreviating names and withholding email until the application is shortlisted. A production privacy notice, lawful basis, retention period, deletion/export process, and incident process are not defined here.</p>
+<h3>10.3 Threat and Abuse Boundaries</h3>
+<p>Evidence URLs point to third-party content and may reveal information when opened. The current system validates URL syntax and scheme but does not verify ownership, safety, accessibility, or content. Operational controls such as rate limiting, account verification, password reset, audit logging, security monitoring, and backup protection are not implemented in the project baseline.</p>
+
+<h2>11. Acceptance Criteria</h2>
+<p>The following scenarios are suitable as release/demo acceptance checks. Each shall pass using a clean database or known test accounts.</p>
+<table><thead><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr></thead><tbody>
+<tr><td>AC-01</td><td>Register with valid fields as either supported role.</td><td>Account and blank profile are created; user is authenticated and directed into the application.</td></tr>
+<tr><td>AC-02</td><td>Register with a duplicate email, invalid email, short password, or invalid role value.</td><td>Account creation is rejected; no orphan user/profile is created; an understandable error is shown.</td></tr>
+<tr><td>AC-03</td><td>Sign in with valid and invalid credentials, then sign out.</td><td>Valid credentials establish a session; invalid credentials do not; sign-out removes authenticated access.</td></tr>
+<tr><td>AC-04</td><td>Attempt to access employer pages as a jobseeker and jobseeker pages as an employer.</td><td>Role-inappropriate pages/actions are denied or redirected; no cross-role data is changed.</td></tr>
+<tr><td>AC-05</td><td>Save a jobseeker profile with repeated skill names, then add a project with a valid evidence URL.</td><td>Profile values persist, duplicate normalized skills do not create duplicate links, and project is shown to its owner.</td></tr>
+<tr><td>AC-06</td><td>Apply to an open role twice; attempt application to a closed role.</td><td>First application succeeds, duplicate is rejected, and closed-role application is rejected.</td></tr>
+<tr><td>AC-07</td><td>Submit a challenge response and evidence; employer reviews it; candidate resubmits.</td><td>Employer can inspect and review it; candidate sees status/feedback; resubmission returns status to submitted and clears old feedback.</td></tr>
+<tr><td>AC-08</td><td>Create a role with a challenge title but no instructions, then with both values.</td><td>Incomplete challenge definition is rejected; complete definition is stored with the role.</td></tr>
+<tr><td>AC-09</td><td>Open applicant list for an employer-owned role and inspect candidates with distinct evidence.</td><td>Scores follow the documented components; list order is score descending; ties use application time; score notice is visible.</td></tr>
+<tr><td>AC-10</td><td>View candidate contact before and after setting status to shortlisted.</td><td>Email contact is hidden before shortlist and exposed only while the application is shortlisted.</td></tr>
+<tr><td>AC-11</td><td>Update an application status and close/reopen an owned opening.</td><td>New status/open state persists and is reflected in employer and jobseeker views where applicable.</td></tr>
+<tr><td>AC-12</td><td>Submit a POST without a valid CSRF token or with HTML in user content.</td><td>Mutation is rejected for invalid token; rendered content is escaped and does not execute as markup/script.</td></tr>
+<tr><td>AC-13</td><td>Use the public and authenticated flows at mobile and desktop widths.</td><td>Navigation, forms, dashboards, opportunities, and applicant controls remain readable and operable without horizontal page overflow.</td></tr>
+</tbody></table>
+
+<h2>12. Assumptions, Dependencies and Limits</h2>
+<ul>
+<li>Users have access to a supported browser and the application server; employers and jobseekers provide accurate information.</li>
+<li>Skill labels are self-reported; project count and challenge state are evidence indicators, not independent verification.</li>
+<li>A candidate's email becomes visible to an employer only after shortlist status is set.</li>
+<li>Role descriptions, skills, and challenge instructions are authored by employers and are not moderated by the platform.</li>
+<li>The deployment supplies PHP, required extensions, a compatible SQL server, database credentials, and writable/session-capable runtime settings.</li>
+<li>Demo accounts and records are seed data for evaluation only; production deployment must change credentials, database settings, and operational practices.</li>
+<li>The UI does not include role search/filtering, pagination, editing/deleting existing projects or roles, email notifications, password reset, or file uploads.</li>
+<li>There is no administrator account or administrative moderation console.</li>
+</ul>
+
+<h2>13. Future Scope (Not Current Requirements)</h2>
+<p>The following are candidate enhancements, not capabilities promised by this baseline:</p>
+<ul>
+<li>Email verification, password recovery, multi-factor authentication, rate limiting, and audit events.</li>
+<li>Applicant and job search, filtering, pagination, and notification preferences.</li>
+<li>Candidate-controlled profile visibility, project editing/deletion, and account/data deletion/export workflows.</li>
+<li>Employer editing/deletion of openings, structured compensation/experience fields, and role expiry.</li>
+<li>More robust skills taxonomy, evidence review/verification, and challenge evaluation rubrics.</li>
+<li>Accessibility audit and formal WCAG 2.2 AA target; localization and configurable timezone/currency.</li>
+<li>Production deployment architecture, automated migrations, monitoring, backup/restore drills, and performance objectives.</li>
+</ul>
+
+<h2>14. Glossary</h2>
+<table><thead><tr><th>Term</th><th>Definition</th></tr></thead><tbody>
+<tr><td>Applicant</td><td>A jobseeker who has submitted one application to an opening.</td></tr>
+<tr><td>Challenge</td><td>An optional practical task authored for a specific opening.</td></tr>
+<tr><td>Evidence</td><td>A project description, external URL, or challenge response presented to support a candidate's claimed skills.</td></tr>
+<tr><td>Fit score</td><td>A transparent numeric comparison aid computed from required skill overlap, project count, and challenge status.</td></tr>
+<tr><td>Jobseeker</td><td>An account holder using SkillPass to present skills and apply for openings.</td></tr>
+<tr><td>Employer</td><td>An account holder using SkillPass to post openings and review candidates.</td></tr>
+<tr><td>Opening / role</td><td>A job record published by an employer, in open or closed state.</td></tr>
+<tr><td>Shortlisted</td><td>An employer-selected application state that also enables the employer's candidate email contact link.</td></tr>
+</tbody></table>
+
+<h2>15. Traceability Summary</h2>
+<table><thead><tr><th>Requirement group</th><th>Primary implementation evidence</th></tr></thead><tbody>
+<tr><td>FR-AUTH</td><td>Registration/login/logout POST actions, session handling, role guards in <code>index.php</code> and <code>config.php</code>.</td></tr>
+<tr><td>FR-PROF</td><td>Profile/project forms and handlers, profile completion formula, and skill normalization in <code>index.php</code> and <code>config.php</code>.</td></tr>
+<tr><td>FR-OPP</td><td>Public/jobseeker opportunity listing, application handler, unique application key, application page.</td></tr>
+<tr><td>FR-CHAL</td><td>Challenge creation/submission/review actions, challenge and submission constraints, candidate/jobseeker views.</td></tr>
+<tr><td>FR-EMP</td><td>Employer opening creation/status actions, ownership-scoped queries, applicant view, fit calculation.</td></tr>
+<tr><td>FR-UI</td><td>Public page, navigation markup, responsive styles, and menu behavior in <code>index.php</code>, <code>style.css</code>, and <code>app.js</code>.</td></tr>
+<tr><td>Data requirements</td><td>Tables, indexes, unique constraints, foreign keys, enums, and demonstration records in <code>database.sql</code>.</td></tr>
+</tbody></table>
+<div class="callout"><strong>Baseline statement:</strong> This SRS is a functional and technical description of the current SkillPass demo, not a claim of production readiness, independent skill verification, or automated hiring suitability.</div>
+<p class="endnote">End of document | SkillPass Software Requirements Specification | Version 2.0</p>
+</section>
+<div class="page-footer">colaboration of the special agents, (group 3)</div>
+</body>
+</html>
