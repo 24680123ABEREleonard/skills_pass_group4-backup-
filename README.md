@@ -12,6 +12,24 @@ The request handling and application logic are in [`index.php`](./index.php); th
 4. Open `http://localhost/GROUP%203%20PROJECT/` in your browser.
 5. If your MySQL settings differ from XAMPP's defaults, edit the connection values at the top of [`config.php`](./config.php), or set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in the PHP environment.
 
+## Deploy on Railway
+
+1. Create a Railway project from this repository. Railway will build the root `Dockerfile` and provide the web service's `PORT`.
+2. Add a Railway MySQL service and import [`database.sql`](./database.sql) into its database.
+3. In the PHP service, add these variables using references to the MySQL service. Replace `MySQL` with that service's exact name if needed:
+
+	| Variable | Railway reference |
+	| --- | --- |
+	| `DB_HOST` | `${{MySQL.MYSQLHOST}}` |
+	| `DB_PORT` | `${{MySQL.MYSQLPORT}}` |
+	| `DB_NAME` | `${{MySQL.MYSQLDATABASE}}` |
+	| `DB_USER` | `${{MySQL.MYSQLUSER}}` |
+	| `DB_PASSWORD` | `${{MySQL.MYSQLPASSWORD}}` |
+
+4. Deploy the PHP service and open its generated public domain.
+
+This project seeds demo accounts with the shared password `Demo123!`. For a public deployment, remove or change those accounts before sharing the site.
+
 ## Demo accounts
 
 All demo accounts use the password `Demo123!`.
