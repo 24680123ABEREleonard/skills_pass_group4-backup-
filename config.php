@@ -11,6 +11,47 @@ session_set_cookie_params([
 ]);
 session_start();
 
+function load_local_environment(string $path): void
+{
+    if (!is_file($path)) {
+        return;
+    }
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES);
+    if ($lines === false) {
+        error_log('SkillPass local environment file could not be read.');
+        return;
+    }
+
+    $allowedVariables = [
+        'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD',
+        'MAIL_HOST', 'MAIL_PORT', 'MAIL_USERNAME', 'MAIL_PASSWORD',
+        'MAIL_ENCRYPTION', 'MAIL_FROM_ADDRESS', 'MAIL_FROM_NAME',
+    ];
+
+    foreach ($lines as $line) {
+        if (!preg_match('/^\s*(?:export\s+)?([A-Z_]+)\s*=\s*(.*?)\s*$/', $line, $matches)
+            || !in_array($matches[1], $allowedVariables, true)
+            || getenv($matches[1]) !== false) {
+            continue;
+        }
+
+        $value = trim($matches[2]);
+        if (strlen($value) >= 2 && (($value[0] === '"' && substr($value, -1) === '"')
+            || ($value[0] === "'" && substr($value, -1) === "'"))) {
+            $value = substr($value, 1, -1);
+        } else {
+            $value = preg_replace('/\s+#.*$/', '', $value) ?? $value;
+        }
+
+        putenv($matches[1] . '=' . $value);
+        $_ENV[$matches[1]] = $value;
+        $_SERVER[$matches[1]] = $value;
+    }
+}
+
+load_local_environment(__DIR__ . '/.env');
+
 $dbHost = getenv('DB_HOST') ?: '127.0.0.1';
 $dbPort = getenv('DB_PORT') ?: '3306';
 $dbName = getenv('DB_NAME') ?: 'skillpass';

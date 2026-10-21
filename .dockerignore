@@ -2,3 +2,5 @@
 .env
 .env.*
 !.env.example
+/vendor/
+/composer.phar

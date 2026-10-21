@@ -10,6 +10,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.querySelectorAll('[data-password-toggle]').forEach((button) => {
+        const input = button.parentElement.querySelector('input[type="password"], input[type="text"]');
+        if (!input) {
+            return;
+        }
+
+        button.addEventListener('click', () => {
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            button.textContent = visible ? 'Hide' : 'Show';
+            button.setAttribute('aria-label', visible ? button.dataset.hideLabel : button.dataset.showLabel);
+            button.setAttribute('aria-pressed', String(visible));
+        });
+    });
+
     document.querySelectorAll('form[data-confirm]').forEach((form) => {
         form.addEventListener('submit', (event) => {
             if (!window.confirm(form.dataset.confirm)) {

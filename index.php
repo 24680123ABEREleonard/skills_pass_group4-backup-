@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/config.php';
+require __DIR__ . '/mailer.php';
 
 $user = current_user();
 $page = isset($_GET['page']) && is_string($_GET['page']) ? $_GET['page'] : ($user ? 'dashboard' : 'home');
@@ -24,7 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $pdo->beginTransaction();
-            $statement = $pdo->prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)');
+            $statement = $pdo->prepare(
+                "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'pending')"
+            );
             $statement->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $role]);
             $userId = (int) $pdo->lastInsertId();
             $pdo->prepare("INSERT INTO profiles (user_id, headline, location, bio) VALUES (?, '', '', '')")
@@ -41,15 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw $exception;
         }
 
-        session_regenerate_id(true);
-        $_SESSION['user'] = ['id' => $userId, 'name' => $name, 'email' => $email, 'role' => $role];
-        flash('Welcome to SkillPass. Let’s build your profile.');
-        redirect('index.php');
+        flash('Your account request has been sent to the SkillPass admin. You can sign in after it is approved.');
+        redirect('index.php?page=login');
     }
 
     if ($action === 'login') {
         $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-        $statement = $pdo->prepare('SELECT id, name, email, password_hash, role FROM users WHERE email = ?');
+        $statement = $pdo->prepare('SELECT id, name, email, password_hash, role, status FROM users WHERE email = ?');
         $statement->execute([$email]);
         $account = $statement->fetch();
 
@@ -58,8 +59,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('index.php?page=login');
         }
 
+        if ($account['status'] === 'pending') {
+            flash('Your account is awaiting admin approval. Please try again after it has been reviewed.', 'error');
+            redirect('index.php?page=login');
+        }
+        if ($account['status'] !== 'active') {
+            flash('This account is not active. Contact the SkillPass admin for assistance.', 'error');
+            redirect('index.php?page=login');
+        }
+
         session_regenerate_id(true);
         unset($account['password_hash']);
+        unset($account['status']);
         $_SESSION['user'] = $account;
         redirect('index.php');
     }
@@ -74,9 +85,188 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('index.php');
     }
 
+    if ($action === 'request_password_reset') {
+        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            flash('Enter a valid email address.', 'error');
+            redirect('index.php?page=forgot-password');
+        }
+
+        $statement = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+        $statement->execute([$email]);
+        $userId = $statement->fetchColumn();
+
+        if ($userId) {
+            $pdo->beginTransaction();
+            $statement = $pdo->prepare('SELECT id FROM users WHERE id = ? FOR UPDATE');
+            $statement->execute([$userId]);
+            $lockedUserId = $statement->fetchColumn();
+            $code = null;
+
+            if ($lockedUserId) {
+                $statement = $pdo->prepare('SELECT last_sent_at FROM password_reset_codes WHERE user_id = ?');
+                $statement->execute([$userId]);
+                $lastSentAt = $statement->fetchColumn();
+
+                if (!$lastSentAt || strtotime((string) $lastSentAt) <= time() - 60) {
+                    $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+                    $pdo->prepare(
+                        'INSERT INTO password_reset_codes (user_id, code_hash, expires_at, attempts, last_sent_at)
+                         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0, NOW())
+                         ON DUPLICATE KEY UPDATE code_hash = VALUES(code_hash),
+                           expires_at = VALUES(expires_at), attempts = 0, last_sent_at = NOW()'
+                    )->execute([$userId, password_hash($code, PASSWORD_DEFAULT)]);
+                }
+            }
+            $pdo->commit();
+
+            if ($code !== null) {
+                if (!send_password_reset_code($email, $code)) {
+                    error_log('SkillPass password reset email was not delivered; the response remains generic to protect account privacy.');
+                }
+            }
+        }
+
+        flash('If an account exists for that address, a reset code will be sent. If no message arrives, check your spam folder or contact the site administrator; email delivery may be unavailable.');
+        redirect('index.php?page=forgot-password');
+    }
+
+    if ($action === 'complete_password_reset') {
+        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+        $code = trim((string) ($_POST['code'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $passwordConfirm = (string) ($_POST['password_confirm'] ?? '');
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^\d{6}$/', $code)
+            || strlen($password) < 8 || $password !== $passwordConfirm) {
+            flash('Enter the account email, a six-digit code, and matching passwords of at least 8 characters.', 'error');
+            redirect('index.php?page=reset-password');
+        }
+
+        $statement = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+        $statement->execute([$email]);
+        $userId = $statement->fetchColumn();
+        $reset = null;
+
+        if ($userId) {
+            $pdo->beginTransaction();
+            $statement = $pdo->prepare(
+                'SELECT code_hash, attempts, expires_at > NOW() AS is_unexpired
+                 FROM password_reset_codes WHERE user_id = ? FOR UPDATE'
+            );
+            $statement->execute([$userId]);
+            $reset = $statement->fetch() ?: null;
+        }
+
+        $validCode = $reset
+            && (int) $reset['attempts'] < 5
+            && (int) $reset['is_unexpired'] === 1
+            && password_verify($code, $reset['code_hash']);
+
+        if (!$validCode) {
+            if ($reset && (int) $reset['attempts'] < 5) {
+                $pdo->prepare('UPDATE password_reset_codes SET attempts = attempts + 1 WHERE user_id = ?')
+                    ->execute([$userId]);
+            }
+            if ($userId && $pdo->inTransaction()) {
+                $pdo->commit();
+            }
+            flash('The reset code is invalid, expired, or has reached its attempt limit. Request a new code and try again.', 'error');
+            redirect('index.php?page=reset-password');
+        }
+
+        $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+            ->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
+        $pdo->prepare('DELETE FROM password_reset_codes WHERE user_id = ?')->execute([$userId]);
+        $pdo->commit();
+        $_SESSION = [];
+        session_regenerate_id(true);
+        flash('Your password has been reset. Sign in with your new password.');
+        redirect('index.php?page=login');
+    }
+
     if (!$user) {
         flash('Please sign in to continue.', 'error');
         redirect('index.php?page=login');
+    }
+
+    $statement = $pdo->prepare('SELECT role, status FROM users WHERE id = ?');
+    $statement->execute([$user['id']]);
+    $accountState = $statement->fetch();
+    if (!$accountState || $accountState['status'] !== 'active' || $accountState['role'] !== $user['role']) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        flash('Your account is not active. Contact the SkillPass admin for assistance.', 'error');
+        redirect('index.php?page=login');
+    }
+
+    if ($action === 'review_account') {
+        require_role('admin');
+        $accountId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
+        $status = (string) ($_POST['status'] ?? '');
+        if (!$accountId || !in_array($status, ['active', 'rejected'], true)) {
+            flash('Choose a valid account review decision.', 'error');
+            redirect('index.php');
+        }
+
+        $statement = $pdo->prepare("UPDATE users SET status = ? WHERE id = ? AND role IN ('employer', 'jobseeker') AND status = 'pending'");
+        $statement->execute([$status, $accountId]);
+        if ($statement->rowCount() !== 1) {
+            flash('That account is no longer awaiting review.', 'error');
+            redirect('index.php');
+        }
+
+        flash($status === 'active' ? 'Account approved. The user can now sign in.' : 'Account request declined.');
+        redirect('index.php');
+    }
+
+    if ($action === 'review_job') {
+        require_role('admin');
+        $jobId = filter_input(INPUT_POST, 'job_id', FILTER_VALIDATE_INT);
+        $status = (string) ($_POST['status'] ?? '');
+        if (!$jobId || !in_array($status, ['open', 'rejected'], true)) {
+            flash('Choose a valid job-post review decision.', 'error');
+            redirect('index.php');
+        }
+
+        $statement = $pdo->prepare("UPDATE jobs SET status = ? WHERE id = ? AND status = 'pending'");
+        $statement->execute([$status, $jobId]);
+        if ($statement->rowCount() !== 1) {
+            flash('That job post is no longer awaiting review.', 'error');
+            redirect('index.php');
+        }
+
+        flash($status === 'open' ? 'Job post approved and published.' : 'Job post declined.');
+        redirect('index.php');
+    }
+
+    if ($action === 'send_message') {
+        $sender = $user['role'] === 'admin' ? require_role('admin') : $user;
+        $recipientId = filter_input(INPUT_POST, 'recipient_id', FILTER_VALIDATE_INT);
+        $body = trim((string) ($_POST['body'] ?? ''));
+        $recipient = null;
+
+        if ($sender['role'] === 'admin' && $recipientId) {
+            $statement = $pdo->prepare("SELECT id, role FROM users WHERE id = ? AND role IN ('employer', 'jobseeker')");
+            $statement->execute([$recipientId]);
+            $recipient = $statement->fetch() ?: null;
+        } elseif ($sender['role'] !== 'admin') {
+            $statement = $pdo->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1");
+            $adminId = $statement->fetchColumn();
+            if ($adminId) {
+                $recipient = ['id' => (int) $adminId, 'role' => 'admin'];
+            }
+        }
+
+        if (!$recipient || $body === '' || mb_strlen($body) > 4000) {
+            flash('Choose a recipient and enter a message of 1–4,000 characters.', 'error');
+            redirect('index.php?page=messages');
+        }
+
+        $pdo->prepare('INSERT INTO messages (sender_id, recipient_id, body) VALUES (?, ?, ?)')
+            ->execute([$sender['id'], $recipient['id'], $body]);
+        flash($sender['role'] === 'admin' ? 'Your message has been sent.' : 'Your message has been sent to the SkillPass admin for mediation.');
+        redirect('index.php?page=messages');
     }
 
     if ($action === 'save_profile') {
@@ -194,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $pdo->beginTransaction();
         $pdo->prepare(
-            'INSERT INTO jobs (employer_id, title, company, location, work_type, description) VALUES (?, ?, ?, ?, ?, ?)'
+            "INSERT INTO jobs (employer_id, title, company, location, work_type, description, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')"
         )->execute([$employer['id'], $title, $company, $location, $workType, $description]);
         $jobId = (int) $pdo->lastInsertId();
 
@@ -220,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$jobId, mb_substr($challengeTitle, 0, 160), $challengeInstructions]);
         }
         $pdo->commit();
-        flash('Your opening is live. Applicants will be compared using job skills, work evidence, and challenge results.');
+        flash('Your opening has been submitted for admin approval. It will appear to employees once approved.');
         redirect('index.php?page=jobs');
     }
 
@@ -289,9 +479,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Choose a valid opening status.', 'error');
             redirect('index.php?page=jobs');
         }
-        $statement = $pdo->prepare('UPDATE jobs SET status = ? WHERE id = ? AND employer_id = ?');
-        $statement->execute([$status, $jobId, $employer['id']]);
-        flash('Opening status updated.');
+        $nextStatus = $status === 'closed' ? 'closed' : 'pending';
+        $statement = $pdo->prepare(
+            "UPDATE jobs SET status = ? WHERE id = ? AND employer_id = ? AND status IN ('open', 'closed', 'rejected')"
+        );
+        $statement->execute([$nextStatus, $jobId, $employer['id']]);
+        flash($nextStatus === 'pending'
+            ? 'Your opening has been resubmitted for admin approval before it is published.'
+            : 'Opening closed.');
         redirect('index.php?page=jobs');
     }
 
@@ -302,17 +497,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $user = current_user();
 $flashMessage = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
-$knownPages = ['home', 'how-it-works', 'dashboard', 'opportunities', 'profile', 'applications', 'jobs', 'candidates', 'login', 'register'];
+$knownPages = ['home', 'how-it-works', 'dashboard', 'opportunities', 'profile', 'applications', 'jobs', 'candidates', 'messages', 'login', 'register', 'forgot-password', 'reset-password'];
 if (!in_array($page, $knownPages, true)) {
     $page = $user ? 'dashboard' : 'home';
 }
-if ($user && in_array($page, ['login', 'register'], true)) {
+if ($user && in_array($page, ['login', 'register', 'forgot-password', 'reset-password'], true)) {
     redirect('index.php');
 }
 if (!$user && $page === 'dashboard') {
     $page = 'home';
 }
-if (!$user && !in_array($page, ['home', 'how-it-works', 'login', 'register', 'opportunities'], true)) {
+if (!$user && !in_array($page, ['home', 'how-it-works', 'login', 'register', 'forgot-password', 'reset-password', 'opportunities'], true)) {
     redirect('index.php?page=home');
 }
 if ($user && $user['role'] === 'jobseeker' && in_array($page, ['jobs', 'candidates'], true)) {
@@ -320,6 +515,20 @@ if ($user && $user['role'] === 'jobseeker' && in_array($page, ['jobs', 'candidat
 }
 if ($user && $user['role'] === 'employer' && in_array($page, ['opportunities', 'profile', 'applications'], true)) {
     redirect('index.php');
+}
+if ($user && $user['role'] === 'admin' && !in_array($page, ['dashboard', 'messages', 'how-it-works'], true)) {
+    redirect('index.php');
+}
+if ($user) {
+    $statement = $pdo->prepare('SELECT role, status FROM users WHERE id = ?');
+    $statement->execute([$user['id']]);
+    $accountState = $statement->fetch();
+    if (!$accountState || $accountState['status'] !== 'active' || $accountState['role'] !== $user['role']) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+        flash('Your account is not active. Contact the SkillPass admin for assistance.', 'error');
+        redirect('index.php?page=login');
+    }
 }
 
 $profile = null;
@@ -331,7 +540,72 @@ $jobs = [];
 $applicantRows = [];
 $selectedJob = null;
 $gapSkill = null;
-$counts = ['applications' => 0, 'shortlisted' => 0, 'projects' => 0, 'jobs' => 0, 'candidates' => 0];
+$adminUsers = [];
+$pendingJobs = [];
+$adminApplications = [];
+$messages = [];
+$messageRecipients = [];
+$counts = ['applications' => 0, 'shortlisted' => 0, 'projects' => 0, 'jobs' => 0, 'candidates' => 0, 'unread_messages' => 0];
+
+if ($user && $user['role'] === 'admin') {
+    $counts['pending_accounts'] = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'pending'")->fetchColumn();
+    $counts['active_accounts'] = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'active'")->fetchColumn();
+    $counts['pending_jobs'] = (int) $pdo->query("SELECT COUNT(*) FROM jobs WHERE status = 'pending'")->fetchColumn();
+    $counts['open_jobs'] = (int) $pdo->query("SELECT COUNT(*) FROM jobs WHERE status = 'open'")->fetchColumn();
+    $counts['applications'] = (int) $pdo->query('SELECT COUNT(*) FROM applications')->fetchColumn();
+    $counts['unread_messages'] = (int) $pdo->query(
+        "SELECT COUNT(*) FROM messages m JOIN users u ON u.id = m.recipient_id WHERE u.role = 'admin' AND m.read_at IS NULL"
+    )->fetchColumn();
+
+    $adminUsers = $pdo->query(
+        "SELECT id, name, email, role, status, created_at FROM users
+         WHERE role IN ('employer', 'jobseeker') ORDER BY (status = 'pending') DESC, created_at DESC"
+    )->fetchAll();
+    $pendingJobs = $pdo->query(
+        "SELECT j.id, j.title, j.company, j.location, j.work_type, j.description, j.created_at, u.name AS employer_name
+         FROM jobs j JOIN users u ON u.id = j.employer_id WHERE j.status = 'pending' ORDER BY j.created_at ASC"
+    )->fetchAll();
+    $adminApplications = $pdo->query(
+        'SELECT a.id, a.status, a.created_at, j.title, j.company, u.name AS candidate_name
+         FROM applications a JOIN jobs j ON j.id = a.job_id JOIN users u ON u.id = a.jobseeker_id
+         ORDER BY a.created_at DESC LIMIT 8'
+    )->fetchAll();
+    $messageRecipients = $pdo->query(
+        "SELECT id, name, email, role, status FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'active' ORDER BY name"
+    )->fetchAll();
+    $messages = $pdo->query(
+        'SELECT m.id, m.sender_id, m.recipient_id, m.body, m.read_at, m.created_at,
+                sender.name AS sender_name, sender.role AS sender_role,
+                recipient.name AS recipient_name, recipient.role AS recipient_role
+         FROM messages m JOIN users sender ON sender.id = m.sender_id
+         JOIN users recipient ON recipient.id = m.recipient_id
+         ORDER BY m.created_at DESC LIMIT 100'
+    )->fetchAll();
+    if ($page === 'messages') {
+        $pdo->prepare('UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE recipient_id = ? AND read_at IS NULL')
+            ->execute([$user['id']]);
+    }
+}
+
+if ($user && $user['role'] !== 'admin') {
+    $statement = $pdo->prepare('SELECT COUNT(*) FROM messages WHERE recipient_id = ? AND read_at IS NULL');
+    $statement->execute([$user['id']]);
+    $counts['unread_messages'] = (int) $statement->fetchColumn();
+    if ($page === 'messages') {
+        $statement = $pdo->prepare(
+            'SELECT m.id, m.sender_id, m.recipient_id, m.body, m.read_at, m.created_at,
+                    sender.name AS sender_name, sender.role AS sender_role,
+                    recipient.name AS recipient_name, recipient.role AS recipient_role
+             FROM messages m JOIN users sender ON sender.id = m.sender_id
+             JOIN users recipient ON recipient.id = m.recipient_id
+             WHERE m.sender_id = ? OR m.recipient_id = ? ORDER BY m.created_at DESC LIMIT 100'
+        );
+        $statement->execute([$user['id'], $user['id']]);
+        $messages = $statement->fetchAll();
+        $pdo->prepare('UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE recipient_id = ? AND read_at IS NULL')
+            ->execute([$user['id']]);
+    }
+}
 
 if ($user && $user['role'] === 'jobseeker') {
     $statement = $pdo->prepare('SELECT headline, location, bio FROM profiles WHERE user_id = ?');
@@ -353,6 +627,8 @@ if ($user && $user['role'] === 'jobseeker') {
                 u.name AS employer_name,
                 (SELECT GROUP_CONCAT(s.name ORDER BY s.name SEPARATOR ', ')
                  FROM job_skills js JOIN skills s ON s.id = js.skill_id WHERE js.job_id = j.id) AS skills,
+                (SELECT c.title FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_title,
+                (SELECT c.instructions FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_instructions,
                 EXISTS(SELECT 1 FROM applications a WHERE a.job_id = j.id AND a.jobseeker_id = ?) AS applied
          FROM jobs j JOIN users u ON u.id = j.employer_id
          WHERE j.status = 'open' ORDER BY j.created_at DESC"
@@ -413,7 +689,8 @@ if ($user && $user['role'] === 'employer') {
                 (SELECT GROUP_CONCAT(s.name ORDER BY s.name SEPARATOR ', ')
                  FROM job_skills js JOIN skills s ON s.id = js.skill_id WHERE js.job_id = j.id) AS skills,
                 (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applicant_count,
-                (SELECT c.title FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_title
+                (SELECT c.title FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_title,
+                (SELECT c.instructions FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_instructions
          FROM jobs j WHERE j.employer_id = ? ORDER BY j.created_at DESC"
     );
     $statement->execute([$user['id']]);
@@ -446,7 +723,7 @@ if ($user && $user['role'] === 'employer') {
 
         $statement = $pdo->prepare(
             'SELECT a.id AS application_id, a.status AS application_status, a.cover_note, a.created_at AS applied_at,
-                    u.id AS candidate_id, u.name, u.email,
+                    u.id AS candidate_id, u.name,
                     p.headline, p.location, p.bio,
                     c.id AS challenge_id, c.title AS challenge_title,
                     s.id AS submission_id, s.response AS submission_response, s.evidence_url AS submission_evidence,
@@ -475,12 +752,13 @@ if ($user && $user['role'] === 'employer') {
             }
 
             $statement = $pdo->prepare(
-                "SELECT user_id, COUNT(*) AS total FROM projects WHERE user_id IN ({$candidatePlaceholders}) GROUP BY user_id"
+                "SELECT user_id, title, description, evidence_url
+                 FROM projects WHERE user_id IN ({$candidatePlaceholders}) ORDER BY created_at DESC"
             );
             $statement->execute($candidateIds);
             $projectsByCandidate = [];
             foreach ($statement->fetchAll() as $row) {
-                $projectsByCandidate[(int) $row['user_id']] = (int) $row['total'];
+                $projectsByCandidate[(int) $row['user_id']][] = $row;
             }
 
             $statement = $pdo->prepare(
@@ -491,15 +769,20 @@ if ($user && $user['role'] === 'employer') {
 
             foreach ($applicantRows as &$candidate) {
                 $candidateSkills = $skillsByCandidate[(int) $candidate['candidate_id']] ?? [];
+                $candidateProjects = $projectsByCandidate[(int) $candidate['candidate_id']] ?? [];
                 $candidate['skills'] = $candidateSkills;
                 $matchedSkills = array_values(array_intersect(array_map('strtolower', $requiredSkills), array_map('strtolower', $candidateSkills)));
                 $skillScore = $requiredSkills ? (count($matchedSkills) / count($requiredSkills)) * 70 : 0;
-                $projectScore = min(($projectsByCandidate[(int) $candidate['candidate_id']] ?? 0) * 5, 20);
+                $projectScore = min(count($candidateProjects) * 5, 20);
                 $challengeScore = $candidate['challenge_status'] === 'passed' ? 10 : ($candidate['challenge_status'] === 'submitted' ? 5 : 0);
                 $candidate['matched_skills'] = $matchedSkills;
                 $candidate['required_skills'] = $requiredSkills;
                 $candidate['score'] = (int) round($skillScore + $projectScore + $challengeScore);
-                $candidate['project_count'] = $projectsByCandidate[(int) $candidate['candidate_id']] ?? 0;
+                $candidate['skill_points'] = $skillScore;
+                $candidate['project_points'] = $projectScore;
+                $candidate['challenge_points'] = $challengeScore;
+                $candidate['projects'] = $candidateProjects;
+                $candidate['project_count'] = count($candidate['projects']);
             }
             unset($candidate);
             usort($applicantRows, static fn (array $a, array $b): int => $b['score'] <=> $a['score'] ?: strcmp((string) $a['applied_at'], (string) $b['applied_at']));
@@ -512,7 +795,8 @@ function badge_class(string $status): string
     return match ($status) {
         'shortlisted', 'passed', 'hired' => 'badge badge-green',
         'reviewing', 'submitted' => 'badge badge-blue',
-        'declined', 'needs_work', 'closed' => 'badge badge-muted',
+        'declined', 'needs_work', 'closed', 'rejected' => 'badge badge-muted',
+        'pending' => 'badge badge-amber',
         default => 'badge',
     };
 }
@@ -528,6 +812,8 @@ function status_label(string $status): string
         'declined' => 'Not selected',
         'hired' => 'Hired',
         'closed' => 'Closed',
+        'pending' => 'Awaiting admin approval',
+        'rejected' => 'Not approved',
         'open' => 'Open',
         default => ucfirst($status),
     };

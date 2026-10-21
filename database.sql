@@ -8,10 +8,22 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(120) NOT NULL,
   email VARCHAR(190) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('jobseeker', 'employer') NOT NULL,
+  role ENUM('jobseeker', 'employer', 'admin') NOT NULL,
+  status ENUM('pending', 'active', 'rejected') NOT NULL DEFAULT 'active',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS password_reset_codes (
+  user_id BIGINT UNSIGNED NOT NULL,
+  code_hash VARCHAR(255) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  last_sent_at DATETIME NOT NULL,
+  PRIMARY KEY (user_id),
+  KEY idx_password_reset_expiry (expires_at),
+  CONSTRAINT fk_password_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS profiles (
@@ -60,7 +72,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   location VARCHAR(120) NOT NULL,
   work_type ENUM('On-site', 'Hybrid', 'Remote') NOT NULL DEFAULT 'On-site',
   description TEXT NOT NULL,
-  status ENUM('open', 'closed') NOT NULL DEFAULT 'open',
+  status ENUM('pending', 'open', 'closed', 'rejected') NOT NULL DEFAULT 'pending',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_jobs_status_created (status, created_at),
@@ -102,6 +114,20 @@ CREATE TABLE IF NOT EXISTS applications (
   CONSTRAINT fk_applications_jobseeker FOREIGN KEY (jobseeker_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  sender_id BIGINT UNSIGNED NOT NULL,
+  recipient_id BIGINT UNSIGNED NOT NULL,
+  body TEXT NOT NULL,
+  read_at TIMESTAMP NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_messages_recipient_created (recipient_id, created_at),
+  KEY idx_messages_sender_created (sender_id, created_at),
+  CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_messages_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS challenge_submissions (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   challenge_id BIGINT UNSIGNED NOT NULL,
@@ -118,10 +144,10 @@ CREATE TABLE IF NOT EXISTS challenge_submissions (
   CONSTRAINT fk_submissions_jobseeker FOREIGN KEY (jobseeker_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-INSERT IGNORE INTO users (id, name, email, password_hash, role) VALUES
-(1, 'SkillPass Employer', 'employer@skillpass.cm', '$2y$10$E5OF1iKLyHKNTvhkHiMhTOMEcSVQXnZ0riQQgpDzKkRmc67AOdQAa', 'employer'),
-(2, 'Amina Nfor', 'amina@skillpass.cm', '$2y$10$E5OF1iKLyHKNTvhkHiMhTOMEcSVQXnZ0riQQgpDzKkRmc67AOdQAa', 'jobseeker'),
-(3, 'Joel Tabi', 'joel@skillpass.cm', '$2y$10$E5OF1iKLyHKNTvhkHiMhTOMEcSVQXnZ0riQQgpDzKkRmc67AOdQAa', 'jobseeker');
+INSERT IGNORE INTO users (id, name, email, password_hash, role, status) VALUES
+(1, 'SkillPass Employer', 'employer@skillpass.cm', '$2y$10$E5OF1iKLyHKNTvhkHiMhTOMEcSVQXnZ0riQQgpDzKkRmc67AOdQAa', 'employer', 'active'),
+(2, 'Amina Nfor', 'amina@skillpass.cm', '$2y$10$E5OF1iKLyHKNTvhkHiMhTOMEcSVQXnZ0riQQgpDzKkRmc67AOdQAa', 'jobseeker', 'active'),
+(3, 'Joel Tabi', 'joel@skillpass.cm', '$2y$10$E5OF1iKLyHKNTvhkHiMhTOMEcSVQXnZ0riQQgpDzKkRmc67AOdQAa', 'jobseeker', 'active');
 
 INSERT IGNORE INTO profiles (user_id, headline, location, bio) VALUES
 (1, 'People-first hiring for growing teams', 'Douala', 'Find people who can demonstrate the skills your business needs.'),
@@ -146,10 +172,10 @@ INSERT IGNORE INTO projects (user_id, title, description, evidence_url) VALUES
 (2, 'Neighbourhood shop website', 'Designed and built a responsive product catalogue for a local shop.', 'https://example.com/shop-project'),
 (3, 'Community market campaign', 'Planned a two-week social media campaign and wrote its posts.', 'https://example.com/market-campaign');
 
-INSERT IGNORE INTO jobs (id, employer_id, title, company, location, work_type, description) VALUES
-(1, 1, 'Junior Web Assistant', 'SkillPass Demo Studio', 'Douala', 'Hybrid', 'Help our small team improve accessible web pages, test features, and maintain a simple PHP website. We value practical examples and curiosity.'),
-(2, 1, 'Customer Support Associate', 'SkillPass Demo Studio', 'Douala', 'On-site', 'Support customers in person and online, resolve everyday issues, and keep clear service notes.'),
-(3, 1, 'Social Media Assistant', 'SkillPass Demo Studio', 'Yaounde', 'Remote', 'Create helpful social posts, support a simple content calendar, and review engagement with the team.');
+INSERT IGNORE INTO jobs (id, employer_id, title, company, location, work_type, description, status) VALUES
+(1, 1, 'Junior Web Assistant', 'SkillPass Demo Studio', 'Douala', 'Hybrid', 'Help our small team improve accessible web pages, test features, and maintain a simple PHP website. We value practical examples and curiosity.', 'open'),
+(2, 1, 'Customer Support Associate', 'SkillPass Demo Studio', 'Douala', 'On-site', 'Support customers in person and online, resolve everyday issues, and keep clear service notes.', 'open'),
+(3, 1, 'Social Media Assistant', 'SkillPass Demo Studio', 'Yaounde', 'Remote', 'Create helpful social posts, support a simple content calendar, and review engagement with the team.', 'open');
 
 INSERT IGNORE INTO job_skills (job_id, skill_id) VALUES
 (1, 1), (1, 2), (1, 3), (1, 4),
