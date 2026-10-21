@@ -10,7 +10,7 @@ $profileCompletion = is_array($profile)
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#202229">
+    <meta name="theme-color" content="#111318">
     <title><?= $page === 'how-it-works' ? 'How SkillPass Works — SkillPass' : 'SkillPass — proof over paperwork' ?></title>
     <link rel="stylesheet" href="style.css">
     <script src="app.js" defer></script>
