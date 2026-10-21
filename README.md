@@ -1,8 +1,8 @@
 # SkillPass
 
-SkillPass is a PHP, HTML, CSS, and JavaScript skills-first hiring system. Employees (the existing internal `jobseeker` role) build profiles, apply for approved openings, submit practical challenges, and track applications. Employers manage openings and review candidates. A manually provisioned admin approves employer/employee accounts and job posts, oversees system activity, and mediates messages between both sides. Employers retain responsibility for application reviews and hiring decisions.
+SkillPass is a PHP, HTML, CSS, and JavaScript skills-first hiring system. Employees (the existing internal `jobseeker` role) create accounts and immediately build profiles, apply for approved openings, submit practical challenges, track applications, and follow employers for news and announcements. Employers create accounts and immediately manage openings, publish updates to their followers, and review candidates. A manually provisioned admin uses a separate dashboard to review job posts, oversee system activity, and mediate messages between both sides. Employers retain responsibility for application reviews and hiring decisions.
 
-The request handling and application logic are in [`index.php`](./index.php); the rendered page markup is in [`views/app.php`](./views/app.php), and presentation styles are maintained separately in [`style.css`](./style.css). The view uses PHP only for dynamic, escaped values and role-specific content.
+The request handling and application logic are in [`index.php`](./index.php); the rendered page markup is in [`views/app.php`](./views/app.php), and presentation styles are maintained separately in [`style.css`](./style.css). Employees can follow active employers from the Employer updates page, while employers publish a titled update to their followers from Company updates. The view uses PHP only for dynamic, escaped values and role-specific content.
 
 ## Software requirements specification
 
@@ -12,15 +12,15 @@ The detailed project baseline, including distinct functional and non-functional 
 
 1. Start **Apache** and **MySQL** in the XAMPP Control Panel.
 2. Open phpMyAdmin at `http://localhost/phpmyadmin`.
-3. Import [`database.sql`](./database.sql). It creates the `skillpass` database, tables, and sample records, including the password-reset table. It uses `IF NOT EXISTS` and `INSERT IGNORE`, so importing it again will not drop existing tables.
+3. Import [`database.sql`](./database.sql). This is the single SQL file for SkillPass: it creates the `skillpass` database, all tables and sample records, and applies the admin approval schema to existing installations. It uses `IF NOT EXISTS` and `INSERT IGNORE`; importing it again does not drop existing tables or records.
 4. Install Composer if needed, then run `composer install` from the project folder to install the mail dependency.
 5. Copy [`.env.example`](./.env.example) to `.env` in the project folder and replace the example SMTP values with credentials and a verified sender from your email provider. SkillPass reads this private local file automatically; no Apache restart is needed. The `.env` file is ignored by Git and blocked from direct web requests.
 6. Open `http://localhost/GROUP%203%20PROJECT/` in your browser.
 7. If your MySQL settings differ from XAMPP's defaults, edit the connection values at the top of [`config.php`](./config.php), or set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in the PHP environment.
 
-### Updating an existing database for admin workflows
+### Updating an existing database
 
-Do not reset an existing database. Back it up, then run [`migration_admin_mediation.sql`](./migration_admin_mediation.sql) once against the existing `skillpass` database. Existing accounts receive the `active` status and existing open/closed jobs keep their current statuses. New employee and employer registrations require admin approval; new job posts remain unpublished until approved.
+Back up the existing database, then import [`database.sql`](./database.sql) into phpMyAdmin. The same file creates missing tables, including employer follows and update feeds, and updates the account/job status enums; existing pending employee and employer accounts are activated, and existing open/closed jobs keep their current statuses. New employee and employer accounts are active immediately. New job posts remain unpublished until approved.
 
 Create the first admin manually; there is intentionally no public admin registration or seeded admin password:
 
@@ -33,7 +33,7 @@ Create the first admin manually; there is intentionally no public admin registra
    ```
 3. Sign in using the email and original password used to generate the hash. Add additional admins only by repeating this controlled database process.
 
-For a brand-new database, import the current [`database.sql`](./database.sql); it creates the new role, approval-status, and message-center schema. The sample employer and employee accounts and their existing open roles are active and preserved for demonstration. Change or remove demo credentials before a public deployment.
+The [`database.sql`](./database.sql) file creates the role, account/job status, and message-center schema for a brand-new database and upgrades existing installations. The sample employer and employee accounts and their existing open roles are active and preserved for demonstration. Employee dashboards are available at [`employee-dashboard.php`](./employee-dashboard.php). Sign in with the manually provisioned admin account to open its separate dashboard at [`admin-dashboard.php`](./admin-dashboard.php). Change or remove demo credentials before a public deployment.
 
 ## Deploy on Railway
 
@@ -80,7 +80,7 @@ All demo accounts use the password `Demo123!`.
 | Jobseeker | `amina@skillpass.cm` |
 | Jobseeker | `joel@skillpass.cm` |
 
-You can register new employer or employee accounts from the sign-in screen. Each registration must be approved by the admin before the account can sign in.
+Select **Get started** to create an account as an employee or employer. Both account types can sign in immediately after registration. Job posts still require admin approval before they are published. The admin dashboard is a separate, admin-only page and admin accounts are provisioned manually.
 
 The site root is the public homepage and explains the skills-first flow before account creation. Its floating WhatsApp button opens a chat with SkillPass at `+237 672 828 084`.
 

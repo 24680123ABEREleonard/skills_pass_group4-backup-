@@ -128,6 +128,27 @@ CREATE TABLE IF NOT EXISTS messages (
   CONSTRAINT fk_messages_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS employer_follows (
+  employee_id BIGINT UNSIGNED NOT NULL,
+  employer_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (employee_id, employer_id),
+  KEY idx_employer_follows_employer (employer_id, created_at),
+  CONSTRAINT fk_employer_follows_employee FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_employer_follows_employer FOREIGN KEY (employer_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS employer_updates (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  employer_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_employer_updates_feed (employer_id, created_at),
+  CONSTRAINT fk_employer_updates_employer FOREIGN KEY (employer_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS challenge_submissions (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   challenge_id BIGINT UNSIGNED NOT NULL,
@@ -190,3 +211,30 @@ INSERT IGNORE INTO challenges (job_id, title, instructions) VALUES
 INSERT IGNORE INTO applications (job_id, jobseeker_id, cover_note, status) VALUES
 (1, 2, 'I have built a responsive shop catalogue and would love to bring that hands-on experience to your team.', 'submitted'),
 (3, 3, 'I recently planned a campaign for a community market and can share the content plan and results.', 'reviewing');
+
+-- Apply the account and job approval schema to existing installations as well
+-- as new databases. Existing accounts and open/closed jobs retain their data.
+ALTER TABLE users
+  MODIFY role ENUM('jobseeker', 'employer', 'admin') NOT NULL;
+
+SET @skillpass_add_user_status = IF(
+  (
+    SELECT COUNT(*)
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'users'
+      AND COLUMN_NAME = 'status'
+  ) = 0,
+  'ALTER TABLE users ADD COLUMN status ENUM(''pending'', ''active'', ''rejected'') NOT NULL DEFAULT ''active'' AFTER role',
+  'SELECT 1'
+);
+PREPARE skillpass_schema_statement FROM @skillpass_add_user_status;
+EXECUTE skillpass_schema_statement;
+DEALLOCATE PREPARE skillpass_schema_statement;
+
+ALTER TABLE jobs
+  MODIFY status ENUM('pending', 'open', 'closed', 'rejected') NOT NULL DEFAULT 'pending';
+
+UPDATE users
+SET status = 'active'
+WHERE role IN ('jobseeker', 'employer') AND status = 'pending';

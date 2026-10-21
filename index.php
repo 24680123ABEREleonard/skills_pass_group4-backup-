@@ -5,7 +5,10 @@ require __DIR__ . '/config.php';
 require __DIR__ . '/mailer.php';
 
 $user = current_user();
-$page = isset($_GET['page']) && is_string($_GET['page']) ? $_GET['page'] : ($user ? 'dashboard' : 'home');
+$defaultPage = $user
+    ? ($user['role'] === 'admin' ? 'admin' : ($user['role'] === 'jobseeker' ? 'employee-dashboard' : 'dashboard'))
+    : 'home';
+$page = isset($_GET['page']) && is_string($_GET['page']) ? $_GET['page'] : $defaultPage;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -26,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
             $statement = $pdo->prepare(
-                "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'pending')"
+                "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'active')"
             );
             $statement->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $role]);
             $userId = (int) $pdo->lastInsertId();
@@ -44,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw $exception;
         }
 
-        flash('Your account request has been sent to the SkillPass admin. You can sign in after it is approved.');
+        flash('Your account has been created. You can sign in now.');
         redirect('index.php?page=login');
     }
 
@@ -59,9 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('index.php?page=login');
         }
 
-        if ($account['status'] === 'pending') {
-            flash('Your account is awaiting admin approval. Please try again after it has been reviewed.', 'error');
-            redirect('index.php?page=login');
+        if ($account['status'] === 'pending' && $account['role'] !== 'admin') {
+            $pdo->prepare("UPDATE users SET status = 'active' WHERE id = ? AND status = 'pending'")
+                ->execute([$account['id']]);
+            $account['status'] = 'active';
         }
         if ($account['status'] !== 'active') {
             flash('This account is not active. Contact the SkillPass admin for assistance.', 'error');
@@ -72,7 +76,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         unset($account['password_hash']);
         unset($account['status']);
         $_SESSION['user'] = $account;
-        redirect('index.php');
+        redirect(match ($account['role']) {
+            'admin' => 'admin-dashboard.php',
+            'jobseeker' => 'employee-dashboard.php',
+            default => 'index.php',
+        });
     }
 
     if ($action === 'logout') {
@@ -198,26 +206,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         session_regenerate_id(true);
         flash('Your account is not active. Contact the SkillPass admin for assistance.', 'error');
         redirect('index.php?page=login');
-    }
-
-    if ($action === 'review_account') {
-        require_role('admin');
-        $accountId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
-        $status = (string) ($_POST['status'] ?? '');
-        if (!$accountId || !in_array($status, ['active', 'rejected'], true)) {
-            flash('Choose a valid account review decision.', 'error');
-            redirect('index.php');
-        }
-
-        $statement = $pdo->prepare("UPDATE users SET status = ? WHERE id = ? AND role IN ('employer', 'jobseeker') AND status = 'pending'");
-        $statement->execute([$status, $accountId]);
-        if ($statement->rowCount() !== 1) {
-            flash('That account is no longer awaiting review.', 'error');
-            redirect('index.php');
-        }
-
-        flash($status === 'active' ? 'Account approved. The user can now sign in.' : 'Account request declined.');
-        redirect('index.php');
     }
 
     if ($action === 'review_job') {
@@ -471,6 +459,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('index.php?page=candidates&job=' . (int) ($_POST['job_id'] ?? 0));
     }
 
+    if ($action === 'follow_employer' || $action === 'unfollow_employer') {
+        $jobseeker = require_role('jobseeker');
+        $employerId = filter_input(INPUT_POST, 'employer_id', FILTER_VALIDATE_INT);
+        $statement = $pdo->prepare(
+            "SELECT id FROM users WHERE id = ? AND role = 'employer' AND status = 'active'"
+        );
+        $statement->execute([$employerId]);
+        if (!$employerId || (int) $employerId === (int) $jobseeker['id'] || !$statement->fetchColumn()) {
+            flash('That employer is not available to follow.', 'error');
+            redirect('index.php?page=updates');
+        }
+
+        if ($action === 'follow_employer') {
+            try {
+                $pdo->prepare('INSERT INTO employer_follows (employee_id, employer_id) VALUES (?, ?)')
+                    ->execute([$jobseeker['id'], $employerId]);
+                flash('You are now following this employer. Their updates will appear in your feed.');
+            } catch (PDOException $exception) {
+                if ($exception->getCode() !== '23000') {
+                    throw $exception;
+                }
+                flash('You are already following this employer.', 'error');
+            }
+        } else {
+            $statement = $pdo->prepare('DELETE FROM employer_follows WHERE employee_id = ? AND employer_id = ?');
+            $statement->execute([$jobseeker['id'], $employerId]);
+            $unfollowed = $statement->rowCount() > 0;
+            flash($unfollowed ? 'You have unfollowed this employer.' : 'You were not following this employer.', $unfollowed ? 'success' : 'error');
+        }
+        redirect('index.php?page=updates');
+    }
+
+    if ($action === 'create_employer_update') {
+        $employer = require_role('employer');
+        $title = trim((string) ($_POST['title'] ?? ''));
+        $body = trim((string) ($_POST['body'] ?? ''));
+        if ($title === '' || mb_strlen($title) > 160 || $body === '' || mb_strlen($body) > 3000) {
+            flash('Add an update title and message. Titles can be up to 160 characters and messages up to 3,000 characters.', 'error');
+            redirect('index.php?page=updates');
+        }
+
+        $pdo->prepare('INSERT INTO employer_updates (employer_id, title, body) VALUES (?, ?, ?)')
+            ->execute([$employer['id'], $title, $body]);
+        flash('Your update has been published to your followers.');
+        redirect('index.php?page=updates');
+    }
+
     if ($action === 'toggle_job') {
         $employer = require_role('employer');
         $jobId = filter_input(INPUT_POST, 'job_id', FILTER_VALIDATE_INT);
@@ -497,9 +532,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $user = current_user();
 $flashMessage = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
-$knownPages = ['home', 'how-it-works', 'dashboard', 'opportunities', 'profile', 'applications', 'jobs', 'candidates', 'messages', 'login', 'register', 'forgot-password', 'reset-password'];
+$knownPages = ['home', 'how-it-works', 'dashboard', 'employee-dashboard', 'admin', 'opportunities', 'profile', 'applications', 'jobs', 'candidates', 'messages', 'updates', 'login', 'register', 'forgot-password', 'reset-password'];
 if (!in_array($page, $knownPages, true)) {
-    $page = $user ? 'dashboard' : 'home';
+    $page = $defaultPage;
 }
 if ($user && in_array($page, ['login', 'register', 'forgot-password', 'reset-password'], true)) {
     redirect('index.php');
@@ -507,8 +542,17 @@ if ($user && in_array($page, ['login', 'register', 'forgot-password', 'reset-pas
 if (!$user && $page === 'dashboard') {
     $page = 'home';
 }
+if (!$user && $page === 'employee-dashboard') {
+    redirect('index.php?page=login');
+}
+if (!$user && $page === 'admin') {
+    redirect('index.php?page=login');
+}
 if (!$user && !in_array($page, ['home', 'how-it-works', 'login', 'register', 'forgot-password', 'reset-password', 'opportunities'], true)) {
     redirect('index.php?page=home');
+}
+if ($user && $page === 'employee-dashboard' && $user['role'] !== 'jobseeker') {
+    redirect($user['role'] === 'admin' ? 'admin-dashboard.php' : 'index.php');
 }
 if ($user && $user['role'] === 'jobseeker' && in_array($page, ['jobs', 'candidates'], true)) {
     redirect('index.php');
@@ -516,8 +560,11 @@ if ($user && $user['role'] === 'jobseeker' && in_array($page, ['jobs', 'candidat
 if ($user && $user['role'] === 'employer' && in_array($page, ['opportunities', 'profile', 'applications'], true)) {
     redirect('index.php');
 }
-if ($user && $user['role'] === 'admin' && !in_array($page, ['dashboard', 'messages', 'how-it-works'], true)) {
-    redirect('index.php');
+if ($user && $user['role'] !== 'admin' && $page === 'admin') {
+    redirect($user['role'] === 'jobseeker' ? 'employee-dashboard.php' : 'index.php');
+}
+if ($user && $user['role'] === 'admin' && !in_array($page, ['admin', 'messages', 'how-it-works'], true)) {
+    redirect('index.php?page=admin');
 }
 if ($user) {
     $statement = $pdo->prepare('SELECT role, status FROM users WHERE id = ?');
@@ -540,15 +587,16 @@ $jobs = [];
 $applicantRows = [];
 $selectedJob = null;
 $gapSkill = null;
-$adminUsers = [];
 $pendingJobs = [];
 $adminApplications = [];
 $messages = [];
 $messageRecipients = [];
-$counts = ['applications' => 0, 'shortlisted' => 0, 'projects' => 0, 'jobs' => 0, 'candidates' => 0, 'unread_messages' => 0];
+$employers = [];
+$employerUpdates = [];
+$followedEmployerCount = 0;
+$counts = ['applications' => 0, 'shortlisted' => 0, 'projects' => 0, 'jobs' => 0, 'candidates' => 0, 'unread_messages' => 0, 'followers' => 0];
 
 if ($user && $user['role'] === 'admin') {
-    $counts['pending_accounts'] = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'pending'")->fetchColumn();
     $counts['active_accounts'] = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'active'")->fetchColumn();
     $counts['pending_jobs'] = (int) $pdo->query("SELECT COUNT(*) FROM jobs WHERE status = 'pending'")->fetchColumn();
     $counts['open_jobs'] = (int) $pdo->query("SELECT COUNT(*) FROM jobs WHERE status = 'open'")->fetchColumn();
@@ -557,10 +605,6 @@ if ($user && $user['role'] === 'admin') {
         "SELECT COUNT(*) FROM messages m JOIN users u ON u.id = m.recipient_id WHERE u.role = 'admin' AND m.read_at IS NULL"
     )->fetchColumn();
 
-    $adminUsers = $pdo->query(
-        "SELECT id, name, email, role, status, created_at FROM users
-         WHERE role IN ('employer', 'jobseeker') ORDER BY (status = 'pending') DESC, created_at DESC"
-    )->fetchAll();
     $pendingJobs = $pdo->query(
         "SELECT j.id, j.title, j.company, j.location, j.work_type, j.description, j.created_at, u.name AS employer_name
          FROM jobs j JOIN users u ON u.id = j.employer_id WHERE j.status = 'pending' ORDER BY j.created_at ASC"
@@ -681,6 +725,34 @@ if ($user && $user['role'] === 'jobseeker') {
         );
         $gapSkill = $statement->fetch() ?: null;
     }
+
+    if ($page === 'updates') {
+        $statement = $pdo->prepare(
+            "SELECT u.id, u.name,
+                    EXISTS(SELECT 1 FROM employer_follows ef WHERE ef.employee_id = ? AND ef.employer_id = u.id) AS is_following,
+                    (SELECT COUNT(*) FROM employer_follows ef WHERE ef.employer_id = u.id) AS follower_count,
+                    (SELECT MAX(eu.created_at) FROM employer_updates eu WHERE eu.employer_id = u.id) AS latest_update,
+                    (SELECT COUNT(*) FROM jobs j WHERE j.employer_id = u.id AND j.status = 'open') AS open_role_count
+             FROM users u WHERE u.role = 'employer' AND u.status = 'active'
+             ORDER BY is_following DESC, latest_update DESC, u.name ASC"
+        );
+        $statement->execute([$user['id']]);
+        $employers = $statement->fetchAll();
+        $followedEmployerCount = count(array_filter(
+            $employers,
+            static fn (array $employer): bool => (int) $employer['is_following'] === 1
+        ));
+
+        $statement = $pdo->prepare(
+            "SELECT eu.id, eu.title, eu.body, eu.created_at, u.id AS employer_id, u.name AS employer_name
+             FROM employer_updates eu
+             JOIN users u ON u.id = eu.employer_id AND u.status = 'active'
+             JOIN employer_follows ef ON ef.employer_id = eu.employer_id AND ef.employee_id = ?
+             ORDER BY eu.created_at DESC LIMIT 50"
+        );
+        $statement->execute([$user['id']]);
+        $employerUpdates = $statement->fetchAll();
+    }
 }
 
 if ($user && $user['role'] === 'employer') {
@@ -710,6 +782,17 @@ if ($user && $user['role'] === 'employer') {
     );
     $statement->execute([$user['id']]);
     $counts['shortlisted'] = (int) $statement->fetchColumn();
+    $statement = $pdo->prepare('SELECT COUNT(*) FROM employer_follows WHERE employer_id = ?');
+    $statement->execute([$user['id']]);
+    $counts['followers'] = (int) $statement->fetchColumn();
+
+    if ($page === 'updates') {
+        $statement = $pdo->prepare(
+            'SELECT id, title, body, created_at FROM employer_updates WHERE employer_id = ? ORDER BY created_at DESC LIMIT 50'
+        );
+        $statement->execute([$user['id']]);
+        $employerUpdates = $statement->fetchAll();
+    }
 
     if ($page === 'candidates') {
         $jobId = filter_input(INPUT_GET, 'job', FILTER_VALIDATE_INT);

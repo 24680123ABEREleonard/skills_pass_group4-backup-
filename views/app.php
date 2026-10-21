@@ -5,7 +5,8 @@ $profileCompletion = is_array($profile)
     ? (int) min(100, (($profile['headline'] ? 20 : 0) + ($profile['location'] ? 15 : 0) + ($profile['bio'] ? 25 : 0) + (count($skillNames) ? 20 : 0) + (count($projects) ? 20 : 0)))
     : 0;
 $pageTitle = match ($page) {
-    'dashboard' => 'Overview',
+    'dashboard' => 'Employer dashboard',
+    'employee-dashboard' => 'Employee dashboard',
     'home' => 'Proof of skill',
     'how-it-works' => 'How SkillPass Works',
     'login' => 'Sign in',
@@ -13,6 +14,7 @@ $pageTitle = match ($page) {
     'forgot-password' => 'Forgot password',
     'reset-password' => 'Reset password',
     'opportunities' => 'Open opportunities',
+    'updates' => 'Employer updates',
     'profile' => 'My profile',
     'applications' => 'My applications',
     'jobs' => 'My openings',
@@ -41,15 +43,17 @@ $pageTitle = match ($page) {
         <button class="menu-toggle" type="button" aria-expanded="false" aria-label="Open navigation">Menu</button>
         <nav class="main-nav" aria-label="Main navigation">
             <?php if ($user['role'] === 'admin'): ?>
-                <a class="<?= $page === 'dashboard' ? 'active' : '' ?>" href="index.php">Admin dashboard</a>
+                <a class="<?= $page === 'admin' ? 'active' : '' ?>" href="admin-dashboard.php">Admin dashboard</a>
             <?php elseif ($user['role'] === 'jobseeker'): ?>
-                <a class="<?= $page === 'dashboard' ? 'active' : '' ?>" href="index.php">Employee dashboard</a>
+                <a class="<?= in_array($page, ['dashboard', 'employee-dashboard'], true) ? 'active' : '' ?>" href="employee-dashboard.php">Employee dashboard</a>
                 <a class="<?= $page === 'opportunities' ? 'active' : '' ?>" href="index.php?page=opportunities">Find work</a>
                 <a class="<?= $page === 'profile' ? 'active' : '' ?>" href="index.php?page=profile">My profile</a>
                 <a class="<?= $page === 'applications' ? 'active' : '' ?>" href="index.php?page=applications">Applications</a>
+                <a class="<?= $page === 'updates' ? 'active' : '' ?>" href="index.php?page=updates">Employer updates</a>
             <?php else: ?>
                 <a class="<?= $page === 'dashboard' ? 'active' : '' ?>" href="index.php">Employer dashboard</a>
                 <a class="<?= $page === 'jobs' ? 'active' : '' ?>" href="index.php?page=jobs">My openings</a>
+                <a class="<?= $page === 'updates' ? 'active' : '' ?>" href="index.php?page=updates">Company updates</a>
             <?php endif; ?>
             <a class="<?= $page === 'messages' ? 'active' : '' ?>" href="index.php?page=messages">Messages<?= $counts['unread_messages'] ? ' (' . (int) $counts['unread_messages'] . ')' : '' ?></a>
             <a class="<?= $page === 'how-it-works' ? 'active' : '' ?>" href="index.php?page=how-it-works">How it works</a>
@@ -69,6 +73,7 @@ $pageTitle = match ($page) {
             <a class="<?= $page === 'home' ? 'active' : '' ?>" href="index.php?page=home">Home</a>
             <a href="index.php?page=opportunities">Explore openings</a>
             <a class="<?= $page === 'how-it-works' ? 'active' : '' ?>" href="index.php?page=how-it-works">How it works</a>
+            <a href="admin-dashboard.php">Admin sign in</a>
             <a class="button button-small button-outline" href="index.php?page=login">Sign in</a>
             <a class="button button-small button-primary" href="index.php?page=register">Get started</a>
         </nav>
@@ -91,12 +96,12 @@ $pageTitle = match ($page) {
             </div>
             <div class="feature-grid">
                 <article class="feature-card"><span class="feature-number">01</span><span class="feature-icon">◎</span><h2>Build a skills profile</h2><p>Jobseekers add a professional headline, location, summary, and comma-separated skills. Then they attach projects they have completed, with an optional link to each work sample.</p></article>
-                <article class="feature-card"><span class="feature-number">02</span><span class="feature-icon">↗</span><h2>Apply with useful context</h2><p>Explore open roles, review the employer's description and required skills, and send an optional note. If a role includes a practical challenge, the applicant can respond and link to evidence.</p></article>
+                <article class="feature-card"><span class="feature-number">02</span><span class="feature-icon">↗</span><h2>Apply and stay connected</h2><p>Explore open roles, follow employers for their news and announcements, and apply with an optional note. If a role includes a practical challenge, you can respond and link to evidence.</p></article>
                 <article class="feature-card"><span class="feature-number">03</span><span class="feature-icon">⌕</span><h2>Review evidence fairly</h2><p>Employers compare required-skill overlap, project samples, and challenge results. The transparent fit score supports human review; it does not make the hiring decision.</p></article>
             </div>
             <div class="guide-grid">
-                <article class="guide-card"><span class="eyebrow">FOR EMPLOYEES</span><h2>Make your ability easy to understand</h2><p>Use specific skills, describe your own contribution to each project, and keep evidence links relevant. Your skill tags are self-reported, so examples help employers assess them in context.</p><a href="index.php?page=register">Create an employee account →</a></article>
-                <article class="guide-card"><span class="eyebrow">FOR EMPLOYERS</span><h2>Describe the work before reviewing people</h2><p>Post a clear role description and the skills that matter. An optional practical challenge lets every applicant demonstrate the same job-related task.</p><a href="index.php?page=register">Create an employer account →</a></article>
+                <article class="guide-card"><span class="eyebrow">FOR EMPLOYEES</span><h2>Make your ability easy to understand</h2><p>Use specific skills, describe your own contribution to each project, and keep evidence links relevant. Follow employers to read their news in your updates feed.</p><a href="index.php?page=register">Create an employee account →</a></article>
+                <article class="guide-card"><span class="eyebrow">FOR EMPLOYERS</span><h2>Describe the work before reviewing people</h2><p>Post a clear role description and the skills that matter. An optional practical challenge lets every applicant demonstrate the same job-related task, and company updates keep followers informed.</p><a href="index.php?page=register">Create an employer account →</a></article>
                 <article class="guide-card"><span class="eyebrow">FOR THE ADMIN</span><h2>Keep the marketplace trusted</h2><p>Approve employer and employee accounts, review job posts before publication, oversee platform activity, and mediate messages between both sides. Admin accounts are created manually by the system owner.</p></article>
                 <article class="guide-card"><span class="eyebrow">PRIVACY & DECISIONS</span><h2>Keep people at the centre</h2><p>Candidate names are abbreviated during review. Messages are mediated by the SkillPass admin, and scores do not use personal characteristics.</p></article>
             </div>
@@ -111,7 +116,7 @@ $pageTitle = match ($page) {
                 <span class="eyebrow">WELCOME BACK</span>
                 <h1>Your next opportunity starts with what you can do.</h1>
                 <p>Sign in to pick up where your skills and evidence left off.</p>
-                <div class="guide-card auth-guide"><h2>Your SkillPass workspace</h2><p>Employees can manage a profile, work samples, applications, and challenge feedback. Employers can manage approved openings and review applicants. The SkillPass admin approves new accounts and job posts and mediates platform messages.</p><p>New accounts must be approved by an admin before sign-in is enabled.</p></div>
+                <div class="guide-card auth-guide"><h2>Your SkillPass workspace</h2><p>Employees can manage a profile, work samples, applications, and challenge feedback. Employers can manage openings and review applicants. The SkillPass admin has a separate dashboard to review job posts and mediate platform messages.</p><p>Create an employee or employer account to sign in right away.</p></div>
             </div>
             <form class="panel auth-card" method="post">
                 <h2>Sign in</h2>
@@ -135,9 +140,9 @@ $pageTitle = match ($page) {
                 <h1>Show what you know. Find where it can take you.</h1>
                 <p>Create a free account to build a skills profile, share proof of your work, or find people who can do the job.</p>
                 <div class="guide-stack">
-                    <article class="guide-card"><h2>Employee account</h2><p>Build a profile with skills and project evidence, browse admin-approved opportunities, apply, and follow employer updates. Your account must be approved before sign-in.</p></article>
-                    <article class="guide-card"><h2>Employer account</h2><p>Submit openings with clear skill requirements, optionally add a practical challenge, and review applicants' work after your account is approved.</p></article>
-                    <p class="muted">Choose the account type that matches how you plan to use SkillPass. The admin reviews each new account request; there is no public admin registration.</p>
+                    <article class="guide-card"><h2>Employee account</h2><p>Build a profile with skills and project evidence, browse available opportunities, apply, and follow employer updates. Your account is ready to use as soon as you register.</p></article>
+                    <article class="guide-card"><h2>Employer account</h2><p>Create an account and start preparing openings with clear skill requirements and optional practical challenges. New openings are reviewed before publication.</p></article>
+                    <p class="muted">Choose the account type that matches how you plan to use SkillPass. Admin access is separate and provisioned by the system owner.</p>
                 </div>
             </div>
             <form class="panel auth-card" method="post">
@@ -356,6 +361,58 @@ $pageTitle = match ($page) {
                 <?php if ($job['applied']): ?><span class="button button-done button-full">Application sent</span><?php else: ?><form method="post" class="apply-form"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="apply_job"><input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>"><label class="sr-only" for="note-<?= (int) $job['id'] ?>">Optional note for <?= e($job['title']) ?></label><textarea id="note-<?= (int) $job['id'] ?>" name="cover_note" rows="2" maxlength="2000" placeholder="Add a short note (optional)"></textarea><button class="button button-primary button-full" type="submit">Apply for this role <span aria-hidden="true">→</span></button></form><?php endif; ?>
             </article>
         <?php endforeach; ?></div><?php else: ?><div class="empty-state"><h2>No open roles yet</h2><p>New opportunities will show here as employers post them.</p></div><?php endif; ?>
+    <?php elseif ($user['role'] === 'jobseeker' && $page === 'updates'): ?>
+        <div class="page-heading"><div><span class="eyebrow">KEEP UP WITH THE TEAMS YOU LIKE</span><h1>Employer updates</h1><p>Follow employers to see their news and announcements here.</p></div><span class="count-pill"><?= count($employerUpdates) ?> updates</span></div>
+        <section class="panel form-panel employer-directory-panel">
+            <div class="panel-heading"><div><h2>Employers on SkillPass</h2><p>Follow an employer to add its updates to your feed. You can unfollow at any time.</p></div></div>
+            <?php if ($employers): ?><div class="employer-directory">
+                <?php foreach ($employers as $employer): ?>
+                    <article class="employer-card">
+                        <span class="company-mark"><?= e(mb_strtoupper(mb_substr($employer['name'], 0, 1))) ?></span>
+                        <div class="employer-card-copy"><strong><?= e($employer['name']) ?></strong><small><?= (int) $employer['open_role_count'] ?> open <?= (int) $employer['open_role_count'] === 1 ? 'role' : 'roles' ?> · <?= (int) $employer['follower_count'] ?> followers</small></div>
+                        <form method="post">
+                            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="<?= $employer['is_following'] ? 'unfollow_employer' : 'follow_employer' ?>">
+                            <input type="hidden" name="employer_id" value="<?= (int) $employer['id'] ?>">
+                            <button class="button <?= $employer['is_following'] ? 'button-outline' : 'button-primary' ?>" type="submit"><?= $employer['is_following'] ? 'Following' : 'Follow' ?></button>
+                        </form>
+                    </article>
+                <?php endforeach; ?>
+            </div><?php else: ?><div class="inline-empty"><p>There are no active employers to follow yet.</p></div><?php endif; ?>
+        </section>
+        <div class="section-subheading"><h2>Updates from employers you follow</h2></div>
+        <?php if ($employerUpdates): ?><div class="update-feed">
+            <?php foreach ($employerUpdates as $update): ?>
+                <article class="panel update-card">
+                    <div class="update-meta"><span class="company-mark"><?= e(mb_strtoupper(mb_substr($update['employer_name'], 0, 1))) ?></span><div><strong><?= e($update['employer_name']) ?></strong><time datetime="<?= e(date(DATE_ATOM, strtotime($update['created_at']))) ?>"><?= e(date('M j, Y · g:i a', strtotime($update['created_at']))) ?></time></div></div>
+                    <h3><?= e($update['title']) ?></h3><p><?= e($update['body']) ?></p>
+                </article>
+            <?php endforeach; ?>
+        </div><?php else: ?><div class="empty-state"><h2><?= $followedEmployerCount ? 'No updates from your followed employers yet' : 'Your feed is ready when you are' ?></h2><p><?= $followedEmployerCount ? 'New updates from the employers you follow will appear here.' : 'Follow an employer above to see their updates here.' ?></p></div><?php endif; ?>
+    <?php elseif ($user['role'] === 'employer' && $page === 'updates'): ?>
+        <div class="page-heading"><div><span class="eyebrow">STAY CONNECTED WITH CANDIDATES</span><h1>Company updates</h1><p>Share news and announcements with employees who follow your account.</p></div><span class="count-pill"><?= (int) $counts['followers'] ?> followers</span></div>
+        <div class="two-column updates-layout">
+            <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>Publish an update</h2><p>Updates are shown immediately to your followers.</p></div><span class="heading-icon">↗</span></div>
+                <form method="post">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="create_employer_update">
+                    <label>Title<input name="title" maxlength="160" required placeholder="e.g. New team project starting soon"></label>
+                    <label>Update<textarea name="body" rows="6" maxlength="3000" required placeholder="Share news, events, or a helpful introduction to your team."></textarea></label>
+                    <button class="button button-primary" type="submit">Publish update</button>
+                </form>
+            </section>
+            <section class="panel form-panel">
+                <div class="panel-heading"><div><h2>Your recent updates</h2><p><?= count($employerUpdates) ?> shown · newest first</p></div></div>
+                <?php if ($employerUpdates): ?><div class="update-feed">
+                    <?php foreach ($employerUpdates as $update): ?>
+                        <article class="update-card">
+                            <time datetime="<?= e(date(DATE_ATOM, strtotime($update['created_at']))) ?>"><?= e(date('M j, Y · g:i a', strtotime($update['created_at']))) ?></time>
+                            <h3><?= e($update['title']) ?></h3><p><?= e($update['body']) ?></p>
+                        </article>
+                    <?php endforeach; ?>
+                </div><?php else: ?><div class="inline-empty"><p>You have not published any updates yet.</p></div><?php endif; ?>
+            </section>
+        </div>
     <?php elseif ($user['role'] === 'jobseeker' && $page === 'applications'): ?>
         <div class="page-heading"><div><span class="eyebrow">YOUR NEXT STEP, AT A GLANCE</span><h1>My applications</h1><p>Track updates from employers and complete any practical challenges attached to a role.</p></div></div>
         <div class="system-guide compact-guide"><div class="guide-intro"><h2>Understanding application updates</h2><p>Employers update your status as they review. A practical challenge is separate evidence attached to the opening; submit it here when one is available.</p></div><div class="guide-grid">
@@ -473,14 +530,10 @@ $pageTitle = match ($page) {
             </section>
         </div>
     <?php elseif ($user['role'] === 'admin'): ?>
-        <div class="page-heading"><div><span class="eyebrow">PLATFORM OVERSIGHT</span><h1>Admin dashboard</h1><p>Approve accounts and job posts, support both sides, and oversee activity across SkillPass.</p></div><a class="button button-outline" href="index.php?page=messages">Open messages<?php if ($counts['unread_messages']): ?> · <?= (int) $counts['unread_messages'] ?> unread<?php endif; ?></a></div>
-        <div class="stats-grid admin-stats"><article class="stat-card"><span class="stat-icon">♙</span><strong><?= $counts['pending_accounts'] ?></strong><span>Accounts awaiting review</span></article><article class="stat-card"><span class="stat-icon">▤</span><strong><?= $counts['pending_jobs'] ?></strong><span>Job posts awaiting review</span></article><article class="stat-card"><span class="stat-icon">◎</span><strong><?= $counts['active_accounts'] ?></strong><span>Active employer/employee accounts</span></article><article class="stat-card"><span class="stat-icon">↗</span><strong><?= $counts['applications'] ?></strong><span>Total applications</span></article></div>
-        <section class="system-guide compact-guide"><div class="guide-intro"><span class="eyebrow">YOUR ROLE AS THE MIDDLE PERSON</span><h2>Keep the marketplace trusted and fair</h2><p>Review each new account before access is granted, publish only appropriate job posts, and use the message center to support both employers and employees. Applications and hiring decisions remain with employers; the admin does not approve applications.</p></div></section>
+        <div class="page-heading"><div><span class="eyebrow">PLATFORM OVERSIGHT</span><h1>Admin dashboard</h1><p>Review job posts, support both sides, and oversee activity across SkillPass.</p></div><a class="button button-outline" href="index.php?page=messages">Open messages<?php if ($counts['unread_messages']): ?> · <?= (int) $counts['unread_messages'] ?> unread<?php endif; ?></a></div>
+        <div class="stats-grid admin-stats"><article class="stat-card"><span class="stat-icon">▤</span><strong><?= $counts['pending_jobs'] ?></strong><span>Job posts awaiting review</span></article><article class="stat-card"><span class="stat-icon">◎</span><strong><?= $counts['active_accounts'] ?></strong><span>Active employer/employee accounts</span></article><article class="stat-card"><span class="stat-icon">⌂</span><strong><?= $counts['open_jobs'] ?></strong><span>Published openings</span></article><article class="stat-card"><span class="stat-icon">↗</span><strong><?= $counts['applications'] ?></strong><span>Total applications</span></article><article class="stat-card"><span class="stat-icon">✉</span><strong><?= $counts['unread_messages'] ?></strong><span>Unread admin messages</span></article></div>
+        <section class="system-guide compact-guide"><div class="guide-intro"><span class="eyebrow">YOUR ROLE AS THE MIDDLE PERSON</span><h2>Keep the marketplace trusted and fair</h2><p>New employee and employer accounts can sign in immediately. Review job posts before publication and use the message center to support both sides. Applications and hiring decisions remain with employers.</p></div></section>
         <div class="admin-review-grid">
-            <section class="panel admin-section"><div class="panel-heading"><div><h2>Account requests</h2><p>New employer and employee accounts cannot sign in until approved.</p></div><span class="count-pill"><?= $counts['pending_accounts'] ?> pending</span></div>
-                <?php $pendingAccounts = array_filter($adminUsers, static fn (array $account): bool => $account['status'] === 'pending'); ?>
-                <?php if ($pendingAccounts): ?><div class="admin-record-list"><?php foreach ($pendingAccounts as $account): ?><article class="admin-record"><div><strong><?= e($account['name']) ?></strong><p><?= e($account['email']) ?> · <?= e($account['role'] === 'jobseeker' ? 'Employee' : 'Employer') ?></p><small>Requested <?= e(date('M j, Y', strtotime($account['created_at']))) ?></small></div><div class="admin-actions"><form method="post"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="review_account"><input type="hidden" name="user_id" value="<?= (int) $account['id'] ?>"><button class="button button-primary button-small" name="status" value="active" type="submit">Approve</button><button class="button button-outline button-small" name="status" value="rejected" type="submit">Decline</button></form></div></article><?php endforeach; ?></div><?php else: ?><p class="inline-empty">No account requests need review.</p><?php endif; ?>
-            </section>
             <section class="panel admin-section"><div class="panel-heading"><div><h2>Job-post requests</h2><p>Only approved openings are visible to employees and the public.</p></div><span class="count-pill"><?= $counts['pending_jobs'] ?> pending</span></div>
                 <?php if ($pendingJobs): ?><div class="admin-record-list"><?php foreach ($pendingJobs as $job): ?><article class="admin-record"><div><strong><?= e($job['title']) ?> · <?= e($job['company']) ?></strong><p><?= e($job['employer_name']) ?> · <?= e($job['location']) ?> · <?= e($job['work_type']) ?></p><p><?= e($job['description']) ?></p></div><div class="admin-actions"><form method="post"><input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="review_job"><input type="hidden" name="job_id" value="<?= (int) $job['id'] ?>"><button class="button button-primary button-small" name="status" value="open" type="submit">Approve & publish</button><button class="button button-outline button-small" name="status" value="rejected" type="submit">Decline</button></form></div></article><?php endforeach; ?></div><?php else: ?><p class="inline-empty">No job posts need review.</p><?php endif; ?>
             </section>

@@ -595,7 +595,7 @@ textarea::placeholder { color: #85858d; }
 .ranking-note p { color: var(--ink-soft); }
 .ranking-note strong { color: var(--gold-dark); }
 .badge-amber { color: #efd28c; background: #3b321e; }
-.admin-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+.admin-review-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 22px; }
 .admin-section { padding: 22px; }
 .admin-section .panel-heading { align-items: flex-start; }
 .admin-record-list { display: grid; gap: 10px; }
@@ -619,7 +619,22 @@ textarea::placeholder { color: #85858d; }
 .message-body { margin: 10px 0 0; color: var(--ink-soft); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-reply { display: flex; align-items: flex-end; gap: 8px; margin-top: 14px; }
 .message-reply textarea { min-height: 45px; flex: 1; }
-.admin-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.employer-directory-panel { margin-bottom: 22px; }
+.employer-directory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.employer-card { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--primary); }
+.employer-card-copy { display: grid; flex: 1; min-width: 0; gap: 3px; }
+.employer-card-copy strong { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.employer-card-copy small, .update-meta time, .update-card time { color: var(--muted); font-size: 10px; }
+.employer-card .button { min-height: 34px; padding: 0 11px; font-size: 10px; }
+.update-feed { display: grid; gap: 12px; }
+.update-card { min-width: 0; padding: 18px; }
+.update-card h3 { margin: 12px 0 5px; color: var(--ink); font-size: 15px; }
+.update-card p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
+.update-meta { display: flex; align-items: center; gap: 10px; }
+.update-meta > div { display: grid; gap: 3px; }
+.update-meta strong { color: var(--ink); font-size: 12px; }
+.updates-layout { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+.admin-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .password-field { position: relative; display: flex; align-items: center; }
 .password-field input { padding-right: 70px; }
 .password-toggle { position: absolute; right: 7px; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--gold-dark); font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -635,6 +650,8 @@ textarea::placeholder { color: #85858d; }
     .guide-grid { grid-template-columns: minmax(0, 1fr); }
     .home-guide { margin: 20px 0; }
     .admin-review-grid, .message-layout { grid-template-columns: 1fr; }
+    .updates-layout { grid-template-columns: 1fr; }
+    .employer-directory { grid-template-columns: 1fr; }
     .admin-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .message-compose { position: static; }
     .admin-record { flex-direction: column; }

@@ -99,7 +99,7 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <h3>1.1 Purpose</h3>
 <p>This Software Requirements Specification (SRS) defines the functional behavior, interfaces, data, constraints, quality expectations, and acceptance conditions for SkillPass. It serves as a shared reference for implementing, testing, demonstrating, and maintaining the project.</p>
 <h3>1.2 Product Scope</h3>
-<p>SkillPass is a browser-based, skills-first hiring demonstration platform. Jobseekers maintain a profile of self-reported skills and project evidence, browse open roles, apply, complete an optional role-specific practical challenge, and follow application status. Employers create and manage openings, inspect applicants’ relevant evidence, review challenge submissions, compare candidates using a transparent role-fit score, and update application outcomes.</p>
+<p>SkillPass is a browser-based, skills-first hiring demonstration platform. Jobseekers maintain a profile of self-reported skills and project evidence, browse open roles, apply, complete an optional role-specific practical challenge, and follow application status. Employers create and manage openings, inspect applicants’ relevant evidence, review challenge submissions, compare candidates using a transparent role-fit score, and update application outcomes. A manually provisioned admin approves employer and jobseeker accounts and job posts, oversees platform activity, and mediates messages.</p>
 <p>Public visitors can view the home page and open opportunities, then register or sign in. The project is delivered as a PHP application backed by MySQL/MariaDB and is documented for local operation with XAMPP.</p>
 <h3>1.3 Goals</h3>
 <ul>
@@ -123,14 +123,16 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <li>Jobseeker profile editing, skill list maintenance, and project evidence records.</li><li>Open-role browsing, application submission, challenge response submission, and application tracking.</li>
 <li>Employer role creation, optional skill requirements and practical challenge, opening status management, applicant review, challenge review, and application status management.</li>
 <li>Candidate comparison using required-skill overlap, project count, and challenge status.</li>
-<li>Role-specific dashboards, profile completion indicator, demand-based skill insight, and a WhatsApp contact link.</li>
+<li>Role-specific employee, employer, and admin dashboards; profile completion indicator; demand-based skill insight; and a WhatsApp contact link.</li>
+<li>Admin approval of new user accounts and job posts, platform activity oversight, and message mediation.</li>
 </ul>
 <h3>2.3 User Classes</h3>
 <table><thead><tr><th>User class</th><th>Primary goals</th><th>Access boundary</th></tr></thead><tbody>
 <tr><td>Public visitor</td><td>Learn about SkillPass; inspect open roles; register or sign in.</td><td>Public home, login, registration, and open-opportunities listing. Cannot submit an application without a jobseeker account.</td></tr>
 <tr><td>Jobseeker</td><td>Build a profile, find roles, apply, complete challenges, and track outcomes.</td><td>Own profile and projects; public open roles; own applications and submissions. Cannot access employer management views.</td></tr>
 <tr><td>Employer</td><td>Publish openings, review role applicants and evidence, and progress applications.</td><td>Own job openings and their applicants/submissions. Cannot access jobseeker-only profile-management or application pages.</td></tr>
-<tr><td>System operator</td><td>Configure the local runtime and database; maintain deployment.</td><td>Operational access outside the product UI. No administrative user role or admin console is defined.</td></tr>
+<tr><td>Admin</td><td>Approve new accounts and job posts, oversee platform activity, and mediate messages.</td><td>Admin dashboard and message center. Admin accounts are provisioned manually; public admin registration is unavailable.</td></tr>
+<tr><td>System operator</td><td>Configure the local runtime and database; maintain deployment.</td><td>Operational access outside the product UI.</td></tr>
 </tbody></table>
 
 <h2>3. Users and Operating Context</h2>
@@ -145,7 +147,7 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <h3>3.2 General Constraints</h3>
 <ul>
 <li>The user interface and server-side workflows are currently provided in English.</li>
-<li>Each account has exactly one role: <code>jobseeker</code> or <code>employer</code>.</li>
+<li>Each account has exactly one role: <code>jobseeker</code>, <code>employer</code>, or <code>admin</code>. Public registration is limited to jobseekers and employers.</li>
 <li>The application uses a single PHP entry point and a relational database; no API contract or separate service tier is specified.</li>
 <li>Project and submission evidence are external HTTP/HTTPS links; file upload/storage is not implemented.</li>
 <li>System availability, backups, production hosting, and operational service-level targets are not established by this demo.</li>
@@ -154,7 +156,7 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <h2>4. System Workflows</h2>
 <h3>4.1 Jobseeker Workflow</h3>
 <div class="flow">Public home / open roles
-  -> Register as jobseeker or sign in
+  -> Register as jobseeker or sign in after admin approval
   -> Review dashboard and open roles
   -> Maintain profile, skills, and project evidence
   -> Apply once to an open role, with optional cover note
@@ -171,7 +173,15 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
   -> Set application status: in review, shortlisted, not selected, or hired
   -> Close or reopen the opening</div>
 <h3>4.3 Public Visitor Workflow</h3>
-<p>A visitor can browse public open roles and sign in to apply. Registration creates an account, a blank profile record, and an authenticated session. The homepage offers a WhatsApp link to the configured SkillPass contact number.</p>
+<p>A visitor can browse public open roles and sign in to apply. Registration creates a pending account and blank profile record atomically; the account can sign in after an admin approves it. The homepage offers a WhatsApp link to the configured SkillPass contact number.</p>
+<h3>4.4 Admin Workflow</h3>
+<div class="flow">Admin account is provisioned manually
+  -> Sign in to the admin dashboard
+  -> Approve or decline pending employer/jobseeker accounts
+  -> Approve or decline pending job posts before publication
+  -> Monitor published openings, application totals, and unread messages
+  -> Mediate messages between users
+  -> Leave application review and hiring decisions to employers</div>
 
 <h2>5. Functional Requirements (FR)</h2>
 <p><strong>Functional requirements</strong> specify system capabilities and observable behavior: what users can do and how SkillPass responds. The numbered FR statements below describe the current baseline; priority and implementation status are shown for each requirement.</p>
@@ -179,9 +189,9 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
 <tr><td>FR-AUTH-01</td><td>Must / Implemented</td><td>The system shall allow a visitor to register as either a jobseeker or employer using a name, email address, password, and selected role.</td></tr>
 <tr><td>FR-AUTH-02</td><td>Must / Implemented</td><td>Registration shall require a name of 2-120 characters, a valid email address, and a password of at least 8 characters. Email shall be unique case-insensitively after normalization to lowercase.</td></tr>
-<tr><td>FR-AUTH-03</td><td>Must / Implemented</td><td>Successful registration shall create the user and an initially blank profile atomically, then authenticate the new user.</td></tr>
+<tr><td>FR-AUTH-03</td><td>Must / Implemented</td><td>Successful registration shall create a pending user and initially blank profile atomically. The user shall be able to sign in only after an admin approves the account.</td></tr>
 <tr><td>FR-AUTH-04</td><td>Must / Implemented</td><td>The system shall verify sign-in credentials against the stored password hash and shall not return the hash to the authenticated session.</td></tr>
-<tr><td>FR-AUTH-05</td><td>Must / Implemented</td><td>Successful sign-in and registration shall regenerate the session identifier. Sign-out shall clear the session and expire the session cookie.</td></tr>
+<tr><td>FR-AUTH-05</td><td>Must / Implemented</td><td>Successful sign-in shall regenerate the session identifier. Sign-out shall clear the session and expire the session cookie.</td></tr>
 <tr><td>FR-AUTH-06</td><td>Must / Implemented</td><td>The system shall enforce role-specific page access and redirect unauthorized users to an allowed page or sign-in flow.</td></tr>
 <tr><td>FR-AUTH-07</td><td>Must / Implemented</td><td>Invalid credentials, duplicate email, invalid registration fields, and unauthorized access shall produce a user-facing error or redirect.</td></tr>
 </tbody></table>
@@ -228,6 +238,14 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <tr><td>FR-UI-02</td><td>Must / Implemented</td><td>Navigation shall collapse to a toggle on small screens and expose its expanded state to assistive technology.</td></tr>
 <tr><td>FR-UI-03</td><td>Should / Implemented</td><td>The public interface shall provide a WhatsApp contact link to the configured SkillPass number.</td></tr>
 <tr><td>FR-UI-04</td><td>Must / Implemented</td><td>User-generated content shall be HTML-escaped when rendered in application pages.</td></tr>
+</tbody></table>
+<h3>5.7 Admin and Platform Oversight</h3>
+<table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
+<tr><td>FR-ADMIN-01</td><td>Must / Implemented</td><td>An admin shall have a role-specific dashboard showing pending account and job-post reviews, active account and published-opening totals, application totals, and unread admin messages.</td></tr>
+<tr><td>FR-ADMIN-02</td><td>Must / Implemented</td><td>An admin shall approve or decline pending employer/jobseeker accounts and approve or decline pending job posts. Only approved accounts and approved openings shall become available to their respective users.</td></tr>
+<tr><td>FR-ADMIN-03</td><td>Must / Implemented</td><td>An admin shall be able to review recent application activity without changing application status or making hiring decisions.</td></tr>
+<tr><td>FR-ADMIN-04</td><td>Must / Implemented</td><td>Employers and jobseekers shall be able to send messages to the admin; the admin shall be able to reply to active users through the message center.</td></tr>
+<tr><td>FR-ADMIN-05</td><td>Must / Implemented</td><td>Admin accounts shall be created through controlled manual database provisioning; public registration shall not offer an admin role.</td></tr>
 </tbody></table>
 
 <h2>6. External Interface Requirements</h2>
@@ -314,7 +332,8 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 </section>
 <h3>7.2 Core Entities</h3>
 <table><thead><tr><th>Entity</th><th>Purpose and key attributes</th><th>Relationships / constraints</th></tr></thead><tbody>
-<tr><td>users</td><td>Identity, normalized email, password hash, role, creation time.</td><td>Unique email; role is jobseeker or employer. Parent of profiles, user_skills, projects, jobs, applications, and challenge submissions.</td></tr>
+<tr><td>users</td><td>Identity, normalized email, password hash, role, account status, creation time.</td><td>Unique email; role is jobseeker, employer, or admin. Parent of profiles, user_skills, projects, jobs, applications, messages, and challenge submissions.</td></tr>
+<tr><td>password_reset_codes</td><td>Hashed reset code, expiry, attempt count, and send time for an account.</td><td>One row per user; deleted with user.</td></tr>
 <tr><td>profiles</td><td>One headline, location, summary, and update time per user.</td><td>One-to-one with users; deleted with user.</td></tr>
 <tr><td>skills</td><td>Reusable skill name and normalized unique slug.</td><td>Many-to-many with users and jobs through join tables.</td></tr>
 <tr><td>user_skills</td><td>Association between jobseeker and a skill.</td><td>Composite primary key prevents duplicate association.</td></tr>
@@ -323,6 +342,7 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <tr><td>job_skills</td><td>Required skill associations for a role.</td><td>Composite primary key; deleted with job or skill.</td></tr>
 <tr><td>challenges</td><td>Optional practical challenge title and instructions.</td><td>At most one challenge per job.</td></tr>
 <tr><td>applications</td><td>Jobseeker application, optional note, state, submission time.</td><td>Unique job + jobseeker pair; deleted with job or user.</td></tr>
+<tr><td>messages</td><td>Message body, sender, recipient, read time, and creation time.</td><td>Sender and recipient reference users; deleted with either user.</td></tr>
 <tr><td>challenge_submissions</td><td>Candidate response, optional evidence, review state/note, timestamps.</td><td>Unique challenge + jobseeker pair; deleted with challenge or user.</td></tr>
 </tbody></table>
 <h3>7.3 Data Integrity</h3>
@@ -385,12 +405,12 @@ fit_score       = round(skill_score + project_score + challenge_score)</div>
 <h3>10.2 Personal Data</h3>
 <p>The system stores name, email, password hash, role, profile details, skill associations, project evidence URLs, applications, challenge responses, and employer feedback. The employer applicant view limits candidate identity by abbreviating names and withholding email until the application is shortlisted. A production privacy notice, lawful basis, retention period, deletion/export process, and incident process are not defined here.</p>
 <h3>10.3 Threat and Abuse Boundaries</h3>
-<p>Evidence URLs point to third-party content and may reveal information when opened. The current system validates URL syntax and scheme but does not verify ownership, safety, accessibility, or content. Operational controls such as rate limiting, account verification, password reset, audit logging, security monitoring, and backup protection are not implemented in the project baseline.</p>
+<p>Evidence URLs point to third-party content and may reveal information when opened. The current system validates URL syntax and scheme but does not verify ownership, safety, accessibility, or content. Operational controls such as rate limiting, account verification, audit logging, security monitoring, and backup protection are not implemented in the project baseline. Password recovery is implemented with expiring, hashed reset codes and a verification-attempt limit.</p>
 
 <h2>11. Acceptance Criteria</h2>
 <p>The following scenarios are suitable as release/demo acceptance checks. Each shall pass using a clean database or known test accounts.</p>
 <table><thead><tr><th>ID</th><th>Scenario</th><th>Expected result</th></tr></thead><tbody>
-<tr><td>AC-01</td><td>Register with valid fields as either supported role.</td><td>Account and blank profile are created; user is authenticated and directed into the application.</td></tr>
+<tr><td>AC-01</td><td>Register with valid fields as either supported role.</td><td>Pending account and blank profile are created; sign-in remains unavailable until an admin approves the account.</td></tr>
 <tr><td>AC-02</td><td>Register with a duplicate email, invalid email, short password, or invalid role value.</td><td>Account creation is rejected; no orphan user/profile is created; an understandable error is shown.</td></tr>
 <tr><td>AC-03</td><td>Sign in with valid and invalid credentials, then sign out.</td><td>Valid credentials establish a session; invalid credentials do not; sign-out removes authenticated access.</td></tr>
 <tr><td>AC-04</td><td>Attempt to access employer pages as a jobseeker and jobseeker pages as an employer.</td><td>Role-inappropriate pages/actions are denied or redirected; no cross-role data is changed.</td></tr>
@@ -403,6 +423,7 @@ fit_score       = round(skill_score + project_score + challenge_score)</div>
 <tr><td>AC-11</td><td>Update an application status and close/reopen an owned opening.</td><td>New status/open state persists and is reflected in employer and jobseeker views where applicable.</td></tr>
 <tr><td>AC-12</td><td>Submit a POST without a valid CSRF token or with HTML in user content.</td><td>Mutation is rejected for invalid token; rendered content is escaped and does not execute as markup/script.</td></tr>
 <tr><td>AC-13</td><td>Use the public and authenticated flows at mobile and desktop widths.</td><td>Navigation, forms, dashboards, opportunities, and applicant controls remain readable and operable without horizontal page overflow.</td></tr>
+<tr><td>AC-14</td><td>Sign in as admin and process account and job-post requests, then review dashboard activity and a user message.</td><td>Approvals update account/job availability and dashboard counters; message replies reach the intended user; application hiring decisions remain employer-controlled.</td></tr>
 </tbody></table>
 
 <h2>12. Assumptions, Dependencies and Limits</h2>
@@ -410,17 +431,17 @@ fit_score       = round(skill_score + project_score + challenge_score)</div>
 <li>Users have access to a supported browser and the application server; employers and jobseekers provide accurate information.</li>
 <li>Skill labels are self-reported; project count and challenge state are evidence indicators, not independent verification.</li>
 <li>A candidate's email becomes visible to an employer only after shortlist status is set.</li>
-<li>Role descriptions, skills, and challenge instructions are authored by employers and are not moderated by the platform.</li>
+<li>Admin approval is a publication gate for account access and job posts; ongoing content moderation is not defined.</li>
 <li>The deployment supplies PHP, required extensions, a compatible SQL server, database credentials, and writable/session-capable runtime settings.</li>
 <li>Demo accounts and records are seed data for evaluation only; production deployment must change credentials, database settings, and operational practices.</li>
-<li>The UI does not include role search/filtering, pagination, editing/deleting existing projects or roles, email notifications, password reset, or file uploads.</li>
-<li>There is no administrator account or administrative moderation console.</li>
+<li>The UI does not include role search/filtering, pagination, editing/deleting existing projects or roles, email notifications, or file uploads.</li>
+<li>Admin accounts are created manually in the database; public admin registration is unavailable.</li>
 </ul>
 
 <h2>13. Future Scope (Not Current Requirements)</h2>
 <p>The following are candidate enhancements, not capabilities promised by this baseline:</p>
 <ul>
-<li>Email verification, password recovery, multi-factor authentication, rate limiting, and audit events.</li>
+<li>Email verification, multi-factor authentication, rate limiting, and audit events.</li>
 <li>Applicant and job search, filtering, pagination, and notification preferences.</li>
 <li>Candidate-controlled profile visibility, project editing/deletion, and account/data deletion/export workflows.</li>
 <li>Employer editing/deletion of openings, structured compensation/experience fields, and role expiry.</li>
