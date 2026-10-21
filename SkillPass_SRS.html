@@ -50,6 +50,12 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 .req td:nth-child(2) { width:35mm; }
 .status { display:inline-block; padding:.5mm 1.5mm; border:1px solid #b8d3c5; border-radius:2mm; background:var(--pale); color:#285d45; font-size:8pt; font-weight:700; }
 .flow { padding:3mm 4mm; background:#f4f7f8; border:1px solid var(--line); font-family:Consolas, monospace; font-size:8.5pt; white-space:pre-wrap; }
+.erd-page { page-break-before:always; page-break-after:always; }
+.erd-figure { margin:3mm 0; }
+.erd-figure svg { display:block; width:100%; height:auto; }
+.erd-caption { margin-top:2mm; color:var(--muted); font-size:8.5pt; }
+.erd-legend { display:flex; flex-wrap:wrap; gap:2mm 6mm; margin-top:3mm; font-size:8.5pt; }
+.erd-key { color:#285d45; font-weight:700; }
 .endnote { margin-top:10mm; padding-top:3mm; border-top:1px solid var(--line); color:var(--muted); font-size:8pt; }
 .page-footer { display:none; }
 @media print { .page-footer { position:fixed; right:18mm; bottom:7mm; left:18mm; display:block; border-top:1px solid #ccd8d2; padding-top:2mm; color:#586a73; font-size:8pt; text-align:center; } }
@@ -65,8 +71,8 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
     <p class="subtitle">A detailed baseline specification for the SkillPass web application.</p>
   </div>
   <div class="meta">
-    <div><span>Document version</span><strong>2.0</strong></div>
-    <div><span>Prepared</span><strong>20 October 2026</strong></div>
+    <div><span>Document version</span><strong>3.0</strong></div>
+    <div><span>Prepared</span><strong>21 October 2026</strong></div>
     <div><span>Specification basis</span><strong>Current project implementation</strong></div>
     <div><span>Document status</span><strong>Project baseline</strong></div>
   </div>
@@ -77,13 +83,13 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
   <h2>Document Map</h2>
   <ol>
     <li>Introduction</li><li>Product Overview</li><li>Users and Operating Context</li><li>System Workflows</li>
-    <li>Functional Requirements</li><li>External Interface Requirements</li><li>Data Requirements</li><li>Business Rules and Matching</li>
-    <li>Non-Functional Requirements</li><li>Security and Privacy Requirements</li><li>Acceptance Criteria</li><li>Assumptions, Dependencies and Limits</li>
+    <li>Functional Requirements (FR)</li><li>External Interface Requirements</li><li>Data Requirements</li><li>Entity Relationship Diagram</li><li>Business Rules and Matching</li>
+    <li>Non-Functional Requirements (NFR)</li><li>Security and Privacy Requirements</li><li>Acceptance Criteria</li><li>Assumptions, Dependencies and Limits</li>
     <li>Future Scope</li><li>Glossary</li><li>Traceability Summary</li>
   </ol>
   <div class="callout"><strong>Specification status:</strong> This document describes the behavior present in the supplied SkillPass project as inspected on the preparation date. Requirements marked “Implemented” are traceable to the current PHP application, SQL schema, or README. Any future capability is explicitly identified as not part of the current baseline.</div>
   <h3>Revision History</h3>
-  <table><thead><tr><th>Version</th><th>Date</th><th>Change</th></tr></thead><tbody><tr><td>2.0</td><td>20 October 2026</td><td>Updated the document version and added the collaboration footer to every page.</td></tr></tbody></table>
+  <table><thead><tr><th>Version</th><th>Date</th><th>Change</th></tr></thead><tbody><tr><td>3.0</td><td>21 October 2026</td><td>Added a database ER diagram and clarified the distinction between functional and non-functional requirements.</td></tr><tr><td>2.0</td><td>20 October 2026</td><td>Updated the document version and added the project footer to every page.</td></tr></tbody></table>
   <h3>Intended Readers</h3>
   <p>Project stakeholders, developers, testers, reviewers, maintainers, and operators responsible for installing or evaluating SkillPass.</p>
 </section>
@@ -167,8 +173,8 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <h3>4.3 Public Visitor Workflow</h3>
 <p>A visitor can browse public open roles and sign in to apply. Registration creates an account, a blank profile record, and an authenticated session. The homepage offers a WhatsApp link to the configured SkillPass contact number.</p>
 
-<h2>5. Functional Requirements</h2>
-<p>All requirements below describe the current baseline unless explicitly marked otherwise.</p>
+<h2>5. Functional Requirements (FR)</h2>
+<p><strong>Functional requirements</strong> specify system capabilities and observable behavior: what users can do and how SkillPass responds. The numbered FR statements below describe the current baseline; priority and implementation status are shown for each requirement.</p>
 <h3>5.1 Access and Authentication</h3>
 <table class="req"><thead><tr><th>ID</th><th>Priority / status</th><th>Requirement</th></tr></thead><tbody>
 <tr><td>FR-AUTH-01</td><td>Must / Implemented</td><td>The system shall allow a visitor to register as either a jobseeker or employer using a name, email address, password, and selected role.</td></tr>
@@ -240,9 +246,75 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <p>Requests use standard browser HTTP form submissions. Mutating operations use POST and include a session-bound CSRF token. The application uses redirects after form actions for the user-facing flow. Production TLS termination and deployment networking are environment responsibilities and are not specified by this repository.</p>
 
 <h2>7. Data Requirements</h2>
-<h3>7.1 Core Entities</h3>
+<section class="erd-page">
+<h3>7.1 Entity Relationship Diagram</h3>
+<p>The diagram reflects the relational tables and foreign-key relationships defined in <code>database.sql</code>. Bridge tables implement the many-to-many skill associations; role names on user relationships identify the account's purpose in that relationship.</p>
+<figure class="erd-figure">
+<svg viewBox="0 0 1000 830" role="img" aria-labelledby="erd-title erd-description" xmlns="http://www.w3.org/2000/svg">
+  <title id="erd-title">SkillPass entity relationship diagram</title>
+  <desc id="erd-description">Ten database entities connected by one-to-one, one-to-many, and many-to-many relationships. Users connect to profiles, projects, jobs, applications, challenge submissions, and user skills. Jobs connect to applications, job skills, and an optional challenge. Challenges connect to submissions. Skills connect to both user skills and job skills.</desc>
+  <defs>
+    <style>
+      .erd-box{fill:#fff;stroke:#78958a;stroke-width:2}
+      .erd-head{fill:#17664f}
+      .erd-name{fill:#fff;font:700 17px "Segoe UI",Arial,sans-serif}
+      .erd-fields{fill:#1d2d37;font:13px Consolas,monospace}
+      .erd-line{fill:none;stroke:#526f63;stroke-width:2.2}
+      .erd-card{fill:#234b3c;font:700 12px "Segoe UI",Arial,sans-serif}
+      .erd-card-bg{fill:#fff;stroke:#d5e0da;stroke-width:1}
+    </style>
+    <marker id="erd-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#526f63"/>
+    </marker>
+  </defs>
+  <g class="erd-line" marker-end="url(#erd-arrow)">
+    <path d="M380 72 H325 V225 H265"/>
+    <path d="M500 129 V200"/>
+    <path d="M620 72 H690 V225 H735"/>
+    <path d="M380 100 H345 V340 H145 V375"/>
+    <path d="M380 115 H305 V615 H265"/>
+    <path d="M735 268 H700 V340 H855 V375"/>
+    <path d="M500 429 H265"/>
+    <path d="M735 429 H620"/>
+    <path d="M755 304 H700 V625 H265"/>
+    <path d="M430 129 H680 V680 H620"/>
+    <path d="M855 304 V550"/>
+    <path d="M735 640 H705 V750 H630 V640 H620"/>
+  </g>
+  <g>
+    <g transform="translate(380 25)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">users</text><text class="erd-fields" x="13" y="55">PK id</text><text class="erd-fields" x="13" y="74">UQ email · role</text><text class="erd-fields" x="13" y="93">name · password_hash</text></g>
+    <g transform="translate(25 200)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">profiles</text><text class="erd-fields" x="13" y="55">PK/FK user_id</text><text class="erd-fields" x="13" y="74">headline · location</text><text class="erd-fields" x="13" y="93">bio · updated_at</text></g>
+    <g transform="translate(380 200)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">projects</text><text class="erd-fields" x="13" y="55">PK id · FK user_id</text><text class="erd-fields" x="13" y="74">title · description</text><text class="erd-fields" x="13" y="93">evidence_url · created_at</text></g>
+    <g transform="translate(735 200)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">jobs</text><text class="erd-fields" x="13" y="55">PK id · FK employer_id</text><text class="erd-fields" x="13" y="74">title · company · location</text><text class="erd-fields" x="13" y="93">work_type · status</text></g>
+    <g transform="translate(25 375)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">user_skills</text><text class="erd-fields" x="13" y="55">PK/FK user_id</text><text class="erd-fields" x="13" y="74">PK/FK skill_id</text><text class="erd-fields" x="13" y="93">user ↔ skill bridge</text></g>
+    <g transform="translate(380 375)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">skills</text><text class="erd-fields" x="13" y="55">PK id</text><text class="erd-fields" x="13" y="74">UQ slug</text><text class="erd-fields" x="13" y="93">name</text></g>
+    <g transform="translate(735 375)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">job_skills</text><text class="erd-fields" x="13" y="55">PK/FK job_id</text><text class="erd-fields" x="13" y="74">PK/FK skill_id</text><text class="erd-fields" x="13" y="93">job ↔ skill bridge</text></g>
+    <g transform="translate(25 550)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">applications</text><text class="erd-fields" x="13" y="55">PK id · FK job_id</text><text class="erd-fields" x="13" y="74">FK jobseeker_id</text><text class="erd-fields" x="13" y="93">UQ (job_id, jobseeker_id)</text></g>
+    <g transform="translate(380 550)"><rect class="erd-box" width="240" height="130" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">challenge_submissions</text><text class="erd-fields" x="13" y="55">PK id · FK challenge_id</text><text class="erd-fields" x="13" y="74">FK jobseeker_id</text><text class="erd-fields" x="13" y="93">response · evidence_url</text><text class="erd-fields" x="13" y="112">status · reviewer_note</text></g>
+    <g transform="translate(735 550)"><rect class="erd-box" width="240" height="104" rx="7"/><path class="erd-head" d="M7 0h226a7 7 0 0 1 7 7v27H0V7a7 7 0 0 1 7-7Z"/><text class="erd-name" x="13" y="23">challenges</text><text class="erd-fields" x="13" y="55">PK id · UQ/FK job_id</text><text class="erd-fields" x="13" y="74">title · instructions</text><text class="erd-fields" x="13" y="93">at most one per job</text></g>
+  </g>
+  <g>
+    <g transform="translate(268 177)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : 1</text></g>
+    <g transform="translate(505 158)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(694 177)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(150 347)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(268 593)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(860 347)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(270 402)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">N : 1</text></g>
+    <g transform="translate(670 402)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">N : 1</text></g>
+    <g transform="translate(470 608)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(630 653)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+    <g transform="translate(860 510)"><rect class="erd-card-bg" width="52" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : 0..1</text></g>
+    <g transform="translate(652 730)"><rect class="erd-card-bg" width="40" height="18" rx="4"/><text class="erd-card" x="7" y="13">1 : N</text></g>
+  </g>
+</svg>
+<figcaption class="erd-caption">PK = primary key; FK = foreign key; UQ = unique constraint. 1 : N means one parent can relate to many child records; 1 : 0..1 means a job may have no challenge or one challenge. Bridge tables implement many-to-many relationships.</figcaption>
+</figure>
+<div class="erd-legend"><span><span class="erd-key">users → jobs:</span> employer ownership</span><span><span class="erd-key">users → applications/submissions:</span> jobseeker identity</span><span><span class="erd-key">user_skills / job_skills:</span> many-to-many skill links</span></div>
+</section>
+<h3>7.2 Core Entities</h3>
 <table><thead><tr><th>Entity</th><th>Purpose and key attributes</th><th>Relationships / constraints</th></tr></thead><tbody>
-<tr><td>users</td><td>Identity, normalized email, password hash, role, creation time.</td><td>Unique email; role is jobseeker or employer. Parent of profiles, skills, projects, jobs, applications, and challenge submissions.</td></tr>
+<tr><td>users</td><td>Identity, normalized email, password hash, role, creation time.</td><td>Unique email; role is jobseeker or employer. Parent of profiles, user_skills, projects, jobs, applications, and challenge submissions.</td></tr>
 <tr><td>profiles</td><td>One headline, location, summary, and update time per user.</td><td>One-to-one with users; deleted with user.</td></tr>
 <tr><td>skills</td><td>Reusable skill name and normalized unique slug.</td><td>Many-to-many with users and jobs through join tables.</td></tr>
 <tr><td>user_skills</td><td>Association between jobseeker and a skill.</td><td>Composite primary key prevents duplicate association.</td></tr>
@@ -253,7 +325,7 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <tr><td>applications</td><td>Jobseeker application, optional note, state, submission time.</td><td>Unique job + jobseeker pair; deleted with job or user.</td></tr>
 <tr><td>challenge_submissions</td><td>Candidate response, optional evidence, review state/note, timestamps.</td><td>Unique challenge + jobseeker pair; deleted with challenge or user.</td></tr>
 </tbody></table>
-<h3>7.2 Data Integrity</h3>
+<h3>7.3 Data Integrity</h3>
 <ul>
 <li>Primary and foreign keys shall preserve entity identity and associations.</li>
 <li>Deleting a parent user, job, or challenge cascades to dependent records where configured by the schema.</li>
@@ -262,7 +334,7 @@ code { font-family:Consolas, monospace; font-size:9pt; overflow-wrap:anywhere; }
 <li>Profile and skill updates shall be committed together in a database transaction.</li>
 <li>Timestamps use database current time; application display dates use the PHP runtime timezone.</li>
 </ul>
-<h3>7.3 Retention and Backup</h3>
+<h3>7.4 Retention and Backup</h3>
 <p>The project defines no retention schedule, data export, archival, backup, or restore workflow. These are deployment/operations decisions and require definition before production use.</p>
 
 <h2>8. Business Rules and Matching</h2>
@@ -289,7 +361,8 @@ fit_score       = round(skill_score + project_score + challenge_score)</div>
 <h3>8.4 Profile Completion and Opportunity Insight</h3>
 <p>The dashboard completion indicator uses fixed weights for presence of headline, location, summary, at least one skill, and at least one project. The opportunity insight selects a skill absent from the current profile that appears in the most open roles, with alphabetical ordering used to break equal-demand ties.</p>
 
-<h2>9. Non-Functional Requirements</h2>
+<h2>9. Non-Functional Requirements (NFR)</h2>
+<p><strong>Non-functional requirements</strong> specify quality attributes and operating constraints: how securely, accessibly, compatibly, and reliably the system is expected to work. Numeric service-level targets are explicitly identified as undefined where the current project sets none.</p>
 <table class="req"><thead><tr><th>ID</th><th>Quality</th><th>Requirement</th></tr></thead><tbody>
 <tr><td>NFR-SEC-01</td><td>Security</td><td>Passwords shall be stored using PHP's password hashing API and verified using its password verification API; plaintext passwords shall not be stored.</td></tr>
 <tr><td>NFR-SEC-02</td><td>Security</td><td>Database reads and writes that include user input shall use PDO prepared statements. Dynamic SQL identifiers, such as candidate list placeholders, shall be generated from validated counts rather than user-supplied SQL.</td></tr>
@@ -381,6 +454,6 @@ fit_score       = round(skill_score + project_score + challenge_score)</div>
 <div class="callout"><strong>Baseline statement:</strong> This SRS is a functional and technical description of the current SkillPass demo, not a claim of production readiness, independent skill verification, or automated hiring suitability.</div>
 <p class="endnote">End of document | SkillPass Software Requirements Specification | Version 2.0</p>
 </section>
-<div class="page-footer">colaboration of the special agents, (group 3)</div>
+<div class="page-footer">SkillPass project documentation | Group 3</div>
 </body>
 </html>

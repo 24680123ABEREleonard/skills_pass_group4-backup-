@@ -10,7 +10,7 @@ $profileCompletion = is_array($profile)
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f6f8f4">
+    <meta name="theme-color" content="#202229">
     <title><?= $page === 'how-it-works' ? 'How SkillPass Works — SkillPass' : 'SkillPass — proof over paperwork' ?></title>
     <link rel="stylesheet" href="style.css">
     <script src="app.js" defer></script>
@@ -18,7 +18,7 @@ $profileCompletion = is_array($profile)
 <body>
 <header class="topbar">
     <a class="brand" href="index.php" aria-label="SkillPass home">
-        <img class="brand-logo" src="images/logo.jpeg" alt="SkillPass — Proving What You Can Do" width="160" height="100">
+        <img class="brand-logo" src="images/logo%202.jpeg" alt="SkillPass Aurora — Proving What You Can Do" width="160" height="100">
     </a>
     <?php if ($user): ?>
         <button class="menu-toggle" type="button" aria-expanded="false" aria-label="Open navigation">Menu</button>
@@ -313,7 +313,7 @@ $profileCompletion = is_array($profile)
         <div class="privacy-note"><span>◈</span><p><strong>Fair, evidence-led shortlisting.</strong> Candidate scores use only required skills, work samples, and role challenges. Contact details remain private until you shortlist someone.</p></div>
     <?php endif; ?>
 </main>
-<footer class="site-footer"><a class="brand" href="index.php" aria-label="SkillPass home"><img class="brand-logo" src="images/logo.jpeg" alt="SkillPass — Proving What You Can Do" width="160" height="100"></a><span>Proving what you can do, one skill at a time.</span><span>Built for opportunity in Cameroon.</span></footer>
+<footer class="site-footer"><a class="brand" href="index.php" aria-label="SkillPass home"><img class="brand-logo" src="images/logo%202.jpeg" alt="SkillPass Aurora — Proving What You Can Do" width="160" height="100"></a><span>Proving what you can do, one skill at a time.</span><span>Built for opportunity in Cameroon.</span></footer>
 <a class="whatsapp-float" href="https://wa.me/<?= e($whatsappNumber) ?>?text=<?= e(rawurlencode('Hi SkillPass, I would like to learn more about the platform.')) ?>" target="_blank" rel="noopener noreferrer" aria-label="Chat with SkillPass on WhatsApp" title="Chat with us on WhatsApp">
     <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
         <path d="M16.02 2.1a13.8 13.8 0 0 0-11.8 21l-1.4 5.1 5.2-1.36A13.9 13.9 0 1 0 16.02 2.1Zm0 25.2c-2.1 0-4.1-.55-5.87-1.61l-.42-.25-3.1.81.83-3.02-.27-.44a11.3 11.3 0 1 1 8.83 4.51Zm6.2-8.47c-.34-.17-2.02-1-2.34-1.1-.31-.11-.54-.17-.76.17-.23.34-.88 1.1-1.08 1.33-.2.22-.4.25-.74.08-.34-.17-1.44-.53-2.74-1.68-1.01-.9-1.69-2.02-1.89-2.36-.2-.34-.02-.52.15-.69.15-.15.34-.4.51-.6.17-.2.23-.34.34-.56.12-.23.06-.43-.03-.6-.08-.17-.76-1.84-1.04-2.52-.27-.66-.55-.57-.76-.58h-.65c-.23 0-.6.08-.91.42-.31.34-1.2 1.17-1.2 2.84 0 1.68 1.22 3.3 1.39 3.52.17.23 2.4 3.66 5.81 5.13.81.35 1.45.56 1.95.72.82.26 1.56.22 2.14.13.66-.1 2.02-.83 2.31-1.63.28-.8.28-1.48.2-1.63-.09-.14-.31-.23-.65-.4Z"/>

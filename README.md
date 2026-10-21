@@ -4,6 +4,10 @@ SkillPass is a PHP, HTML, CSS, and JavaScript skills-first hiring demo. Jobseeke
 
 The request handling and application logic are in [`index.php`](./index.php); the rendered page markup is in [`views/app.php`](./views/app.php), and presentation styles are maintained separately in [`style.css`](./style.css). The view uses PHP only for dynamic, escaped values and role-specific content.
 
+## Software requirements specification
+
+The detailed project baseline, including distinct functional and non-functional requirements, acceptance criteria, and the database ER diagram, is available in [SkillPass_SRS.pdf](./SkillPass_SRS.pdf). Its editable HTML source is [SkillPass_SRS.html](./SkillPass_SRS.html).
+
 ## Run with XAMPP
 
 1. Start **Apache** and **MySQL** in the XAMPP Control Panel.
