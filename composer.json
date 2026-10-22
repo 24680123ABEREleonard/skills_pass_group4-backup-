@@ -1,9 +1,6 @@
 {
-    "name": "skillpass/app",
-    "description": "SkillPass skills-first hiring platform",
-    "type": "project",
     "require": {
-        "php": "^8.0",
-        "phpmailer/phpmailer": "^6.10"
+        "php": ">=8.1",
+        "phpmailer/phpmailer": "^6.9"
     }
 }

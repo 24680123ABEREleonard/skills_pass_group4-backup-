@@ -2,914 +2,942 @@
 declare(strict_types=1);
 
 require __DIR__ . '/config.php';
-require __DIR__ . '/mailer.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
-$user = current_user();
-$defaultPage = $user
-    ? ($user['role'] === 'admin' ? 'admin' : ($user['role'] === 'jobseeker' ? 'employee-dashboard' : 'dashboard'))
-    : 'home';
-$page = isset($_GET['page']) && is_string($_GET['page']) ? $_GET['page'] : $defaultPage;
+use PHPMailer\PHPMailer\Exception as MailerException;
+use PHPMailer\PHPMailer\PHPMailer;
+
+$notice = '';
+$noticeType = 'success';
+$requestedPage = isset($_GET['page']) ? (string) $_GET['page'] : '';
+$view = in_array($requestedPage, ['auth', 'jobs'], true) ? $requestedPage : 'landing';
+$authMode = isset($_GET['mode']) && $_GET['mode'] === 'signup' ? 'signup' : 'login';
+$signupRole = isset($_GET['role']) && in_array($_GET['role'], ['candidate', 'employer'], true)
+    ? (string) $_GET['role']
+    : '';
+$pendingEmail = $_SESSION['pending_login_email'] ?? '';
+$jobs = [];
+$jobsLoaded = false;
+$applicationsByJob = [];
+$candidateApplications = [];
+
+function send_login_code(string $email, string $code): bool
+{
+    $username = getenv('SMTP_USER') ?: '';
+    $password = getenv('SMTP_PASS') ?: '';
+    if ($username === '' || $password === '') {
+        error_log('SkillsPassAurora sign-in code was not sent: SMTP_USER and SMTP_PASS are not configured.');
+        return false;
+    }
+
+    $subject = 'Your SkillsPassAurora sign-in code';
+    $message = "Your SkillsPassAurora sign-in code is {$code}. It expires in 10 minutes.";
+
+    $mailer = new PHPMailer(true);
+    try {
+        $mailer->isSMTP();
+        $mailer->Host = getenv('SMTP_HOST') ?: 'smtp.gmail.com';
+        $mailer->SMTPAuth = true;
+        $mailer->Username = $username;
+        $mailer->Password = $password;
+        $mailer->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mailer->Port = (int) (getenv('SMTP_PORT') ?: 587);
+        $mailer->CharSet = PHPMailer::CHARSET_UTF8;
+        $mailer->setFrom(getenv('SMTP_FROM') ?: $username, 'SkillsPassAurora');
+        $mailer->addAddress($email);
+        $mailer->Subject = $subject;
+        $mailer->Body = $message;
+        $mailer->send();
+        return true;
+    } catch (MailerException $exception) {
+        error_log('SkillsPassAurora sign-in code email could not be sent: ' . $mailer->ErrorInfo);
+        return false;
+    }
+}
+
+function start_user_session(array $user): void
+{
+    session_regenerate_id(true);
+    $_SESSION['user'] = [
+        'id' => (int) $user['id'],
+        'email' => (string) $user['email'],
+        'role' => (string) $user['role'],
+        'display_name' => (string) $user['display_name'],
+    ];
+    unset($_SESSION['pending_login_user_id'], $_SESSION['pending_login_email']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $action = isset($_POST['action']) && is_string($_POST['action']) ? $_POST['action'] : '';
-
+    $action = (string) ($_POST['action'] ?? '');
+    if ($action === 'login' || $action === 'register') {
+        $authMode = $action === 'register' ? 'signup' : 'login';
+    }
     if ($action === 'register') {
-        $name = trim((string) ($_POST['name'] ?? ''));
-        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-        $password = (string) ($_POST['password'] ?? '');
-        $role = (string) ($_POST['role']     ?? '');
+        $submittedRole = (string) ($_POST['role'] ?? '');
+        $signupRole = in_array($submittedRole, ['candidate', 'employer'], true) ? $submittedRole : '';
+    }
 
-        if (mb_strlen($name) < 2 || mb_strlen($name) > 120 || !filter_var($email, FILTER_VALIDATE_EMAIL)
-            || strlen($password) < 8 || !in_array($role, ['jobseeker', 'employer'], true)) {
-            flash('Enter a valid name and email, choose an account type, and use a password with at least 8 characters.', 'error');
-            redirect('index.php?page=register');
-        }
+    try {
+        if ($action === 'register') {
+            $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+            $password = (string) ($_POST['password'] ?? '');
+            $role = (string) ($_POST['role'] ?? '');
+            $displayName = trim((string) ($_POST['display_name'] ?? ''));
 
-        try {
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !in_array($role, ['candidate', 'employer'], true) || $displayName === '') {
+                throw new RuntimeException('Enter a valid email, account type, and name.');
+            }
+            if (strlen($password) < 10) {
+                throw new RuntimeException('Use a password with at least 10 characters.');
+            }
+
+            $pdo = db();
             $pdo->beginTransaction();
             $statement = $pdo->prepare(
-                "INSERT INTO users (name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'active')"
+                'INSERT INTO users (email, password_hash, role, display_name)
+                 VALUES (:email, :password_hash, :role, :display_name)'
             );
-            $statement->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $role]);
+            $statement->execute([
+                'email' => $email,
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                'role' => $role,
+                'display_name' => $displayName,
+            ]);
             $userId = (int) $pdo->lastInsertId();
-            $pdo->prepare("INSERT INTO profiles (user_id, headline, location, bio) VALUES (?, '', '', '')")
-                ->execute([$userId]);
             $pdo->commit();
-        } catch (PDOException $exception) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
+
+            start_user_session([
+                'id' => $userId,
+                'email' => $email,
+                'role' => $role,
+                'display_name' => $displayName,
+            ]);
+            $notice = 'Your account has been created.';
+            $view = 'dashboard';
+        } elseif ($action === 'verify') {
+            $userId = filter_var($_SESSION['pending_login_user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($userId === false) {
+                throw new RuntimeException('Sign in with your password before requesting a sign-in code.');
             }
-            if ($exception->getCode() === '23000') {
-                flash('That email address already has an account. Please sign in instead.', 'error');
-                redirect('index.php?page=login');
+            $code = trim((string) ($_POST['otp'] ?? ''));
+            $statement = db()->prepare('SELECT id, email, role, display_name, otp_hash, otp_expires_at, otp_attempts FROM users WHERE id = :id');
+            $statement->execute(['id' => $userId]);
+            $user = $statement->fetch();
+
+            if (!$user || $user['otp_hash'] === null || $user['otp_expires_at'] === null
+                || (int) $user['otp_attempts'] >= 5
+                || strtotime((string) $user['otp_expires_at'] . ' UTC') <= time()
+                || !password_verify($code, (string) $user['otp_hash'])) {
+                if ($user && (int) $user['otp_attempts'] < 5) {
+                    db()->prepare('UPDATE users SET otp_attempts = otp_attempts + 1 WHERE id = :id')->execute(['id' => $user['id']]);
+                }
+                throw new RuntimeException('That code is invalid or expired. Request a new code and try again.');
             }
-            throw $exception;
-        }
 
-        flash('Your account has been created. You can sign in now.');
-        redirect('index.php?page=login');
-    }
+            $statement = db()->prepare(
+                'UPDATE users
+                 SET failed_login_attempts = 0, otp_hash = NULL, otp_expires_at = NULL, otp_attempts = 0
+                 WHERE id = :id AND otp_hash = :otp_hash AND otp_attempts < 5'
+            );
+            $statement->execute(['id' => $user['id'], 'otp_hash' => $user['otp_hash']]);
+            if ($statement->rowCount() !== 1) {
+                throw new RuntimeException('That code is invalid or expired. Request a new code and try again.');
+            }
+            start_user_session($user);
+            $notice = 'Sign-in verified.';
+            $view = 'dashboard';
+        } elseif ($action === 'resend') {
+            $userId = filter_var($_SESSION['pending_login_user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($userId === false) {
+                throw new RuntimeException('Sign in with your password before requesting a sign-in code.');
+            }
+            $statement = db()->prepare('SELECT id, email, otp_last_sent_at FROM users WHERE id = :id');
+            $statement->execute(['id' => $userId]);
+            $user = $statement->fetch();
+            if (!$user) {
+                unset($_SESSION['pending_login_user_id'], $_SESSION['pending_login_email']);
+                throw new RuntimeException('The sign-in request expired. Please sign in again.');
+            }
+            if ($user['otp_last_sent_at'] !== null && strtotime((string) $user['otp_last_sent_at'] . ' UTC') > time() - 60) {
+                throw new RuntimeException('Please wait one minute before requesting another code.');
+            }
 
-    if ($action === 'login') {
-        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-        $statement = $pdo->prepare('SELECT id, name, email, password_hash, role, status FROM users WHERE email = ?');
-        $statement->execute([$email]);
-        $account = $statement->fetch();
-
-        if (!$account || !password_verify((string) ($_POST['password'] ?? ''), $account['password_hash'])) {
-            flash('The email or password was not recognised. Please try again.', 'error');
-            redirect('index.php?page=login');
-        }
-
-        if ($account['status'] === 'pending' && $account['role'] !== 'admin') {
-            $pdo->prepare("UPDATE users SET status = 'active' WHERE id = ? AND status = 'pending'")
-                ->execute([$account['id']]);
-            $account['status'] = 'active';
-        }
-        if ($account['status'] !== 'active') {
-            flash('This account is not active. Contact the SkillPass admin for assistance.', 'error');
-            redirect('index.php?page=login');
-        }
-
-        session_regenerate_id(true);
-        unset($account['password_hash']);
-        unset($account['status']);
-        $_SESSION['user'] = $account;
-        redirect(match ($account['role']) {
-            'admin' => 'admin-dashboard.php',
-            'jobseeker' => 'employee-dashboard.php',
-            default => 'index.php',
-        });
-    }
-
-    if ($action === 'logout') {
-        $_SESSION = [];
-        if (ini_get('session.use_cookies')) {
-            $cookie = session_get_cookie_params();
-            setcookie(session_name(), '', time() - 42000, $cookie['path'], $cookie['domain'], $cookie['secure'], $cookie['httponly']);
-        }
-        session_destroy();
-        redirect('index.php');
-    }
-
-    if ($action === 'request_password_reset') {
-        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            flash('Enter a valid email address.', 'error');
-            redirect('index.php?page=forgot-password');
-        }
-
-        $statement = $pdo->prepare('SELECT id FROM users WHERE email = ?');
-        $statement->execute([$email]);
-        $userId = $statement->fetchColumn();
-
-        if ($userId) {
+            $code = (string) random_int(100000, 999999);
+            db()->prepare(
+                'UPDATE users SET otp_hash = :otp_hash, otp_expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), otp_last_sent_at = UTC_TIMESTAMP(), otp_attempts = 0 WHERE id = :id'
+            )->execute(['otp_hash' => password_hash($code, PASSWORD_DEFAULT), 'id' => $user['id']]);
+            if (!send_login_code((string) $user['email'], $code)) {
+                throw new RuntimeException('Email delivery failed. Check the SMTP settings and try again after one minute.');
+            }
+            $notice = 'A new sign-in code has been sent.';
+            $view = 'verify';
+        } elseif ($action === 'login') {
+            $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+            $password = (string) ($_POST['password'] ?? '');
+            $pdo = db();
             $pdo->beginTransaction();
-            $statement = $pdo->prepare('SELECT id FROM users WHERE id = ? FOR UPDATE');
-            $statement->execute([$userId]);
-            $lockedUserId = $statement->fetchColumn();
-            $code = null;
+            $statement = $pdo->prepare('SELECT id, email, password_hash, role, display_name, failed_login_attempts, otp_hash, otp_expires_at, otp_last_sent_at FROM users WHERE email = :email FOR UPDATE');
+            $statement->execute(['email' => $email]);
+            $user = $statement->fetch();
 
-            if ($lockedUserId) {
-                $statement = $pdo->prepare('SELECT last_sent_at FROM password_reset_codes WHERE user_id = ?');
-                $statement->execute([$userId]);
-                $lastSentAt = $statement->fetchColumn();
-
-                if (!$lastSentAt || strtotime((string) $lastSentAt) <= time() - 60) {
-                    $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            if (!$user || !password_verify($password, (string) $user['password_hash'])) {
+                if ($user) {
                     $pdo->prepare(
-                        'INSERT INTO password_reset_codes (user_id, code_hash, expires_at, attempts, last_sent_at)
-                         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0, NOW())
-                         ON DUPLICATE KEY UPDATE code_hash = VALUES(code_hash),
-                           expires_at = VALUES(expires_at), attempts = 0, last_sent_at = NOW()'
-                    )->execute([$userId, password_hash($code, PASSWORD_DEFAULT)]);
+                        'UPDATE users SET failed_login_attempts = LEAST(failed_login_attempts + 1, 10) WHERE id = :id'
+                    )->execute(['id' => $user['id']]);
                 }
+                $pdo->commit();
+                throw new RuntimeException('Email or password is incorrect.');
             }
+
+            if ((int) $user['failed_login_attempts'] >= 10) {
+                session_regenerate_id(true);
+                $_SESSION['pending_login_user_id'] = (int) $user['id'];
+                $_SESSION['pending_login_email'] = (string) $user['email'];
+                $pendingEmail = (string) $user['email'];
+                $view = 'verify';
+                $activeCode = $user['otp_hash'] !== null && $user['otp_expires_at'] !== null
+                    && strtotime((string) $user['otp_expires_at'] . ' UTC') > time();
+                if ($activeCode) {
+                    $pdo->commit();
+                    $notice = 'Enter the sign-in code sent to your email.';
+                } else {
+                    $lastSentAt = $user['otp_last_sent_at'] === null ? false : strtotime((string) $user['otp_last_sent_at'] . ' UTC');
+                    if ($lastSentAt !== false && $lastSentAt > time() - 60) {
+                        $pdo->commit();
+                        $notice = 'Please check your email for the sign-in code, or wait one minute before requesting another.';
+                        $noticeType = 'error';
+                    } else {
+                        $code = (string) random_int(100000, 999999);
+                        $pdo->prepare(
+                            'UPDATE users SET otp_hash = :otp_hash, otp_expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), otp_last_sent_at = UTC_TIMESTAMP(), otp_attempts = 0 WHERE id = :id'
+                        )->execute(['otp_hash' => password_hash($code, PASSWORD_DEFAULT), 'id' => $user['id']]);
+                        $pdo->commit();
+                        if (send_login_code((string) $user['email'], $code)) {
+                            $notice = 'Too many incorrect password attempts. A sign-in code was sent to your email.';
+                        } else {
+                            $notice = 'Too many incorrect password attempts. Email delivery failed; check the SMTP settings and request a new code after one minute.';
+                            $noticeType = 'error';
+                        }
+                    }
+                }
+            } else {
+                $pdo->prepare('UPDATE users SET failed_login_attempts = 0 WHERE id = :id')->execute(['id' => $user['id']]);
+                $pdo->commit();
+                start_user_session($user);
+                $view = 'dashboard';
+            }
+        } elseif ($action === 'create_job') {
+            $user = signed_in_user();
+            if ($user === null || $user['role'] !== 'employer') {
+                throw new RuntimeException('Only signed-in employers can post jobs.');
+            }
+
+            $pdo = db();
+            $statement = $pdo->prepare(
+                'SELECT id FROM users
+                 WHERE id = :id AND email = :email AND role = :role'
+            );
+            $statement->execute([
+                'id' => $user['id'],
+                'email' => $user['email'],
+                'role' => 'employer',
+            ]);
+            $employerId = $statement->fetchColumn();
+            if ($employerId === false) {
+                $statement = $pdo->prepare(
+                    'SELECT id FROM users WHERE email = :email AND role = :role'
+                );
+                $statement->execute([
+                    'email' => $user['email'],
+                    'role' => 'employer',
+                ]);
+                $employerId = $statement->fetchColumn();
+            }
+            if ($employerId === false) {
+                throw new RuntimeException('Your employer account could not be found. Sign out and sign in again, then retry.');
+            }
+            $user['id'] = (int) $employerId;
+            $_SESSION['user']['id'] = $user['id'];
+
+            $title = trim((string) ($_POST['title'] ?? ''));
+            $location = trim((string) ($_POST['location'] ?? ''));
+            $employmentType = (string) ($_POST['employment_type'] ?? '');
+            $description = trim((string) ($_POST['description'] ?? ''));
+            $skills = trim((string) ($_POST['skills'] ?? ''));
+            if (strcasecmp($title, 'software expert') === 0) {
+                $title = 'Software Expert';
+            }
+
+            if ($title === '' || strlen($title) > 150 || $location === '' || strlen($location) > 150
+                || !in_array($employmentType, ['full-time', 'part-time', 'contract', 'temporary'], true)
+                || $description === '' || strlen($description) > 10000 || strlen($skills) > 2000) {
+                throw new RuntimeException('Enter a valid job title, location, job type, and description.');
+            }
+
+            $statement = db()->prepare(
+                'INSERT INTO jobs (employer_id, title, location, employment_type, description, skills)
+                 VALUES (:employer_id, :title, :location, :employment_type, :description, :skills)'
+            );
+            $statement->execute([
+                'employer_id' => $user['id'],
+                'title' => $title,
+                'location' => $location,
+                'employment_type' => $employmentType,
+                'description' => $description,
+                'skills' => $skills !== '' ? $skills : null,
+            ]);
+            $notice = 'Your job has been posted and is now available to candidates.';
+            $view = 'dashboard';
+        } elseif ($action === 'apply_job') {
+            $user = signed_in_user();
+            if ($user === null || $user['role'] !== 'candidate') {
+                throw new RuntimeException('Only signed-in candidates can apply for jobs.');
+            }
+
+            $jobId = filter_var($_POST['job_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($jobId === false) {
+                throw new RuntimeException('Choose a valid job before applying.');
+            }
+
+            $coverLetter = trim((string) ($_POST['cover_letter'] ?? ''));
+            $relevantExperience = trim((string) ($_POST['relevant_experience'] ?? ''));
+            $portfolioUrl = trim((string) ($_POST['portfolio_url'] ?? ''));
+            $portfolioScheme = strtolower((string) parse_url($portfolioUrl, PHP_URL_SCHEME));
+            if ($coverLetter === '' || strlen($coverLetter) > 5000
+                || strlen($relevantExperience) > 3000
+                || ($portfolioUrl !== '' && (
+                    strlen($portfolioUrl) > 2048
+                    || !filter_var($portfolioUrl, FILTER_VALIDATE_URL)
+                    || !in_array($portfolioScheme, ['http', 'https'], true)
+                ))) {
+                throw new RuntimeException('Add a cover letter of up to 5,000 characters. Experience is limited to 3,000 characters, and portfolio links must be valid HTTP or HTTPS URLs.');
+            }
+
+            $pdo = db();
+            $pdo->beginTransaction();
+            $statement = $pdo->prepare('SELECT status FROM jobs WHERE id = :id FOR UPDATE');
+            $statement->execute(['id' => $jobId]);
+            if ($statement->fetchColumn() !== 'available') {
+                throw new RuntimeException('This job is no longer available.');
+            }
+
+            $statement = $pdo->prepare(
+                'INSERT INTO applications (job_id, candidate_id, cover_letter, relevant_experience, portfolio_url)
+                 VALUES (:job_id, :candidate_id, :cover_letter, :relevant_experience, :portfolio_url)'
+            );
+            $statement->execute([
+                'job_id' => $jobId,
+                'candidate_id' => $user['id'],
+                'cover_letter' => $coverLetter,
+                'relevant_experience' => $relevantExperience !== '' ? $relevantExperience : null,
+                'portfolio_url' => $portfolioUrl !== '' ? $portfolioUrl : null,
+            ]);
+            $pdo->commit();
+            $notice = 'Your application has been sent to the employer.';
+            $view = 'dashboard';
+        } elseif ($action === 'hire_candidate') {
+            $user = signed_in_user();
+            if ($user === null || $user['role'] !== 'employer') {
+                throw new RuntimeException('Only signed-in employers can select a candidate.');
+            }
+
+            $jobId = filter_var($_POST['job_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $candidateId = filter_var($_POST['candidate_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($jobId === false || $candidateId === false) {
+                throw new RuntimeException('Choose a valid job and applicant.');
+            }
+
+            $pdo = db();
+            $pdo->beginTransaction();
+            $statement = $pdo->prepare('SELECT status FROM jobs WHERE id = :id AND employer_id = :employer_id FOR UPDATE');
+            $statement->execute(['id' => $jobId, 'employer_id' => $user['id']]);
+            if ($statement->fetchColumn() !== 'available') {
+                throw new RuntimeException('This job is unavailable or does not belong to your employer account.');
+            }
+
+            $statement = $pdo->prepare(
+                "UPDATE applications SET status = 'accepted'
+                 WHERE job_id = :job_id AND candidate_id = :candidate_id AND status = 'pending'"
+            );
+            $statement->execute(['job_id' => $jobId, 'candidate_id' => $candidateId]);
+            if ($statement->rowCount() !== 1) {
+                throw new RuntimeException('That candidate does not have a pending application for this job.');
+            }
+
+            $statement = $pdo->prepare(
+                "UPDATE jobs SET status = 'taken', selected_candidate_id = :candidate_id
+                 WHERE id = :job_id AND employer_id = :employer_id AND status = 'available'"
+            );
+            $statement->execute([
+                'candidate_id' => $candidateId,
+                'job_id' => $jobId,
+                'employer_id' => $user['id'],
+            ]);
+            $pdo->prepare("UPDATE applications SET status = 'rejected' WHERE job_id = :job_id AND status = 'pending'")
+                ->execute(['job_id' => $jobId]);
             $pdo->commit();
 
-            if ($code !== null) {
-                if (!send_password_reset_code($email, $code)) {
-                    error_log('SkillPass password reset email was not delivered; the response remains generic to protect account privacy.');
-                }
-            }
+            $notice = 'Candidate selected. The job is now marked Taken and other pending applications are closed.';
+            $view = 'dashboard';
+        } elseif ($action === 'logout') {
+            $_SESSION = [];
+            session_regenerate_id(true);
+            $notice = 'You have signed out.';
         }
-
-        flash('If an account exists for that address, a reset code will be sent. If no message arrives, check your spam folder or contact the site administrator; email delivery may be unavailable.');
-        redirect('index.php?page=forgot-password');
-    }
-
-    if ($action === 'complete_password_reset') {
-        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-        $code = trim((string) ($_POST['code'] ?? ''));
-        $password = (string) ($_POST['password'] ?? '');
-        $passwordConfirm = (string) ($_POST['password_confirm'] ?? '');
-
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^\d{6}$/', $code)
-            || strlen($password) < 8 || $password !== $passwordConfirm) {
-            flash('Enter the account email, a six-digit code, and matching passwords of at least 8 characters.', 'error');
-            redirect('index.php?page=reset-password');
+    } catch (PDOException $exception) {
+        if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+            $pdo->rollBack();
         }
-
-        $statement = $pdo->prepare('SELECT id FROM users WHERE email = ?');
-        $statement->execute([$email]);
-        $userId = $statement->fetchColumn();
-        $reset = null;
-
-        if ($userId) {
-            $pdo->beginTransaction();
-            $statement = $pdo->prepare(
-                'SELECT code_hash, attempts, expires_at > NOW() AS is_unexpired
-                 FROM password_reset_codes WHERE user_id = ? FOR UPDATE'
-            );
-            $statement->execute([$userId]);
-            $reset = $statement->fetch() ?: null;
-        }
-
-        $validCode = $reset
-            && (int) $reset['attempts'] < 5
-            && (int) $reset['is_unexpired'] === 1
-            && password_verify($code, $reset['code_hash']);
-
-        if (!$validCode) {
-            if ($reset && (int) $reset['attempts'] < 5) {
-                $pdo->prepare('UPDATE password_reset_codes SET attempts = attempts + 1 WHERE user_id = ?')
-                    ->execute([$userId]);
-            }
-            if ($userId && $pdo->inTransaction()) {
-                $pdo->commit();
-            }
-            flash('The reset code is invalid, expired, or has reached its attempt limit. Request a new code and try again.', 'error');
-            redirect('index.php?page=reset-password');
-        }
-
-        $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-            ->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
-        $pdo->prepare('DELETE FROM password_reset_codes WHERE user_id = ?')->execute([$userId]);
-        $pdo->commit();
-        $_SESSION = [];
-        session_regenerate_id(true);
-        flash('Your password has been reset. Sign in with your new password.');
-        redirect('index.php?page=login');
-    }
-
-    if (!$user) {
-        flash('Please sign in to continue.', 'error');
-        redirect('index.php?page=login');
-    }
-
-    $statement = $pdo->prepare('SELECT role, status FROM users WHERE id = ?');
-    $statement->execute([$user['id']]);
-    $accountState = $statement->fetch();
-    if (!$accountState || $accountState['status'] !== 'active' || $accountState['role'] !== $user['role']) {
-        $_SESSION = [];
-        session_regenerate_id(true);
-        flash('Your account is not active. Contact the SkillPass admin for assistance.', 'error');
-        redirect('index.php?page=login');
-    }
-
-    if ($action === 'review_job') {
-        require_role('admin');
-        $jobId = filter_input(INPUT_POST, 'job_id', FILTER_VALIDATE_INT);
-        $status = (string) ($_POST['status'] ?? '');
-        if (!$jobId || !in_array($status, ['open', 'rejected'], true)) {
-            flash('Choose a valid job-post review decision.', 'error');
-            redirect('index.php');
-        }
-
-        $statement = $pdo->prepare("UPDATE jobs SET status = ? WHERE id = ? AND status = 'pending'");
-        $statement->execute([$status, $jobId]);
-        if ($statement->rowCount() !== 1) {
-            flash('That job post is no longer awaiting review.', 'error');
-            redirect('index.php');
-        }
-
-        flash($status === 'open' ? 'Job post approved and published.' : 'Job post declined.');
-        redirect('index.php');
-    }
-
-    if ($action === 'send_message') {
-        $sender = $user['role'] === 'admin' ? require_role('admin') : $user;
-        $recipientId = filter_input(INPUT_POST, 'recipient_id', FILTER_VALIDATE_INT);
-        $body = trim((string) ($_POST['body'] ?? ''));
-        $recipient = null;
-
-        if ($sender['role'] === 'admin' && $recipientId) {
-            $statement = $pdo->prepare("SELECT id, role FROM users WHERE id = ? AND role IN ('employer', 'jobseeker')");
-            $statement->execute([$recipientId]);
-            $recipient = $statement->fetch() ?: null;
-        } elseif ($sender['role'] !== 'admin') {
-            $statement = $pdo->query("SELECT id FROM users WHERE role = 'admin' AND status = 'active' ORDER BY id LIMIT 1");
-            $adminId = $statement->fetchColumn();
-            if ($adminId) {
-                $recipient = ['id' => (int) $adminId, 'role' => 'admin'];
-            }
-        }
-
-        if (!$recipient || $body === '' || mb_strlen($body) > 4000) {
-            flash('Choose a recipient and enter a message of 1–4,000 characters.', 'error');
-            redirect('index.php?page=messages');
-        }
-
-        $pdo->prepare('INSERT INTO messages (sender_id, recipient_id, body) VALUES (?, ?, ?)')
-            ->execute([$sender['id'], $recipient['id'], $body]);
-        flash($sender['role'] === 'admin' ? 'Your message has been sent.' : 'Your message has been sent to the SkillPass admin for mediation.');
-        redirect('index.php?page=messages');
-    }
-
-    if ($action === 'save_profile') {
-        $jobseeker = require_role('jobseeker');
-        $headline = mb_substr(trim((string) ($_POST['headline'] ?? '')), 0, 160);
-        $location = mb_substr(trim((string) ($_POST['location'] ?? '')), 0, 120);
-        $bio = trim((string) ($_POST['bio'] ?? ''));
-        if (mb_strlen($bio) > 3000) {
-            flash('Your profile summary must be 3,000 characters or fewer.', 'error');
-            redirect('index.php?page=profile');
-        }
-
-        $pdo->beginTransaction();
-        $pdo->prepare('UPDATE profiles SET headline = ?, location = ?, bio = ? WHERE user_id = ?')
-            ->execute([$headline, $location, $bio, $jobseeker['id']]);
-        save_skill_list($pdo, (int) $jobseeker['id'], (string) ($_POST['skills'] ?? ''));
-        $pdo->commit();
-        flash('Your profile and skills have been updated.');
-        redirect('index.php?page=profile');
-    }
-
-    if ($action === 'add_project') {
-        $jobseeker = require_role('jobseeker');
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $description = trim((string) ($_POST['description'] ?? ''));
-        $evidenceUrl = trim((string) ($_POST['evidence_url'] ?? ''));
-        if ($title === '' || mb_strlen($title) > 160 || $description === '' || mb_strlen($description) > 3000
-            || ($evidenceUrl !== '' && !valid_evidence_url($evidenceUrl))) {
-            flash('Add a project title and description. Evidence links must be valid URLs.', 'error');
-            redirect('index.php?page=profile');
-        }
-
-        $pdo->prepare('INSERT INTO projects (user_id, title, description, evidence_url) VALUES (?, ?, ?, ?)')
-            ->execute([$jobseeker['id'], $title, $description, $evidenceUrl]);
-        flash('Project added to your evidence portfolio.');
-        redirect('index.php?page=profile');
-    }
-
-    if ($action === 'apply_job') {
-        $jobseeker = require_role('jobseeker');
-        $jobId = filter_input(INPUT_POST, 'job_id', FILTER_VALIDATE_INT);
-        $coverNote = trim((string) ($_POST['cover_note'] ?? ''));
-        $jobStatement = $pdo->prepare("SELECT id FROM jobs WHERE id = ? AND status = 'open'");
-        $jobStatement->execute([$jobId]);
-
-        if (!$jobId || !$jobStatement->fetchColumn()) {
-            flash('This opening is no longer available.', 'error');
-            redirect('index.php?page=opportunities');
-        }
-        if (mb_strlen($coverNote) > 2000) {
-            flash('Your note must be 2,000 characters or fewer.', 'error');
-            redirect('index.php?page=opportunities');
-        }
-
-        try {
-            $pdo->prepare('INSERT INTO applications (job_id, jobseeker_id, cover_note) VALUES (?, ?, ?)')
-                ->execute([$jobId, $jobseeker['id'], $coverNote]);
-            flash('Application sent. You can follow its status in My applications.');
-        } catch (PDOException $exception) {
-            if ($exception->getCode() !== '23000') {
-                throw $exception;
-            }
-            flash('You have already applied for this opening.', 'error');
-        }
-        redirect('index.php?page=applications');
-    }
-
-    if ($action === 'submit_challenge') {
-        $jobseeker = require_role('jobseeker');
-        $challengeId = filter_input(INPUT_POST, 'challenge_id', FILTER_VALIDATE_INT);
-        $response = trim((string) ($_POST['response'] ?? ''));
-        $evidenceUrl = trim((string) ($_POST['evidence_url'] ?? ''));
-        $statement = $pdo->prepare(
-            "SELECT c.id FROM challenges c
-             JOIN jobs j ON j.id = c.job_id
-             JOIN applications a ON a.job_id = j.id AND a.jobseeker_id = ?
-             WHERE c.id = ? AND j.status = 'open'"
-        );
-        $statement->execute([$jobseeker['id'], $challengeId]);
-
-        if (!$challengeId || !$statement->fetchColumn() || $response === '' || mb_strlen($response) > 5000
-            || ($evidenceUrl !== '' && !valid_evidence_url($evidenceUrl))) {
-            flash('Apply to the open role first, then add a response and a valid evidence link if you have one.', 'error');
-            redirect('index.php?page=applications');
-        }
-
-        $pdo->prepare(
-            "INSERT INTO challenge_submissions (challenge_id, jobseeker_id, response, evidence_url, reviewer_note)
-             VALUES (?, ?, ?, ?, '')
-             ON DUPLICATE KEY UPDATE response = VALUES(response), evidence_url = VALUES(evidence_url),
-               status = 'submitted', reviewer_note = '', submitted_at = CURRENT_TIMESTAMP, reviewed_at = NULL"
-        )->execute([$challengeId, $jobseeker['id'], $response, $evidenceUrl]);
-        flash('Challenge response submitted. The employer will review the evidence.');
-        redirect('index.php?page=applications');
-    }
-
-    if ($action === 'create_job') {
-        $employer = require_role('employer');
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $company = trim((string) ($_POST['company'] ?? ''));
-        $location = trim((string) ($_POST['location'] ?? ''));
-        $workType = (string) ($_POST['work_type'] ?? 'On-site');
-        $description = trim((string) ($_POST['description'] ?? ''));
-        $challengeTitle = trim((string) ($_POST['challenge_title'] ?? ''));
-        $challengeInstructions = trim((string) ($_POST['challenge_instructions'] ?? ''));
-
-        if ($title === '' || $company === '' || $location === '' || $description === ''
-            || mb_strlen($title) > 160 || mb_strlen($company) > 160 || mb_strlen($location) > 120
-            || mb_strlen($description) > 5000 || mb_strlen($challengeInstructions) > 4000
-            || !in_array($workType, ['On-site', 'Hybrid', 'Remote'], true)
-            || (($challengeTitle === '') !== ($challengeInstructions === ''))) {
-            flash('Complete the role details. If you add a practical challenge, provide both its title and instructions.', 'error');
-            redirect('index.php?page=jobs');
-        }
-
-        $pdo->beginTransaction();
-        $pdo->prepare(
-            "INSERT INTO jobs (employer_id, title, company, location, work_type, description, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')"
-        )->execute([$employer['id'], $title, $company, $location, $workType, $description]);
-        $jobId = (int) $pdo->lastInsertId();
-
-        $skillInsert = $pdo->prepare(
-            'INSERT INTO skills (name, slug) VALUES (?, ?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)'
-        );
-        $skillGet = $pdo->prepare('SELECT id FROM skills WHERE slug = ?');
-        $jobSkill = $pdo->prepare('INSERT INTO job_skills (job_id, skill_id) VALUES (?, ?)');
-        foreach (parse_skill_names((string) ($_POST['skills'] ?? '')) as $skillName) {
-            $slug = strtolower(trim((string) preg_replace('/[^a-z0-9]+/i', '-', $skillName), '-'));
-            if ($slug === '') {
-                continue;
-            }
-            $skillInsert->execute([$skillName, $slug]);
-            $skillGet->execute([$slug]);
-            $skillId = $skillGet->fetchColumn();
-            if ($skillId) {
-                $jobSkill->execute([$jobId, (int) $skillId]);
-            }
-        }
-        if ($challengeTitle !== '') {
-            $pdo->prepare('INSERT INTO challenges (job_id, title, instructions) VALUES (?, ?, ?)')
-                ->execute([$jobId, mb_substr($challengeTitle, 0, 160), $challengeInstructions]);
-        }
-        $pdo->commit();
-        flash('Your opening has been submitted for admin approval. It will appear to employees once approved.');
-        redirect('index.php?page=jobs');
-    }
-
-    if ($action === 'update_application') {
-        $employer = require_role('employer');
-        $applicationId = filter_input(INPUT_POST, 'application_id', FILTER_VALIDATE_INT);
-        $status = (string) ($_POST['status'] ?? '');
-        if (!$applicationId || !in_array($status, ['reviewing', 'shortlisted', 'declined', 'hired'], true)) {
-            flash('Choose a valid application status.', 'error');
-            redirect('index.php?page=jobs');
-        }
-
-        $statement = $pdo->prepare(
-            'UPDATE applications a
-             JOIN jobs j ON j.id = a.job_id
-             SET a.status = ?
-             WHERE a.id = ? AND j.employer_id = ?'
-        );
-        $statement->execute([$status, $applicationId, $employer['id']]);
-        if ($statement->rowCount() === 0) {
-            $check = $pdo->prepare(
-                'SELECT a.status FROM applications a JOIN jobs j ON j.id = a.job_id
-                 WHERE a.id = ? AND j.employer_id = ?'
-            );
-            $check->execute([$applicationId, $employer['id']]);
-            if (!$check->fetchColumn()) {
-                http_response_code(404);
-                exit('Application not found.');
-            }
-        }
-        flash('Application status updated.');
-        redirect('index.php?page=candidates&job=' . (int) ($_POST['job_id'] ?? 0));
-    }
-
-    if ($action === 'review_challenge') {
-        $employer = require_role('employer');
-        $submissionId = filter_input(INPUT_POST, 'submission_id', FILTER_VALIDATE_INT);
-        $status = (string) ($_POST['status'] ?? '');
-        $reviewerNote = trim((string) ($_POST['reviewer_note'] ?? ''));
-        if (!$submissionId || !in_array($status, ['passed', 'needs_work'], true) || mb_strlen($reviewerNote) > 1500) {
-            flash('Choose a valid review result and keep feedback under 1,500 characters.', 'error');
-            redirect('index.php?page=jobs');
-        }
-
-        $statement = $pdo->prepare(
-            'UPDATE challenge_submissions s
-             JOIN challenges c ON c.id = s.challenge_id
-             JOIN jobs j ON j.id = c.job_id
-             SET s.status = ?, s.reviewer_note = ?, s.reviewed_at = CURRENT_TIMESTAMP
-             WHERE s.id = ? AND j.employer_id = ?'
-        );
-        $statement->execute([$status, $reviewerNote, $submissionId, $employer['id']]);
-        if ($statement->rowCount() === 0) {
-            http_response_code(404);
-            exit('Challenge submission not found.');
-        }
-        flash('Challenge reviewed. The candidate can see your result and feedback.');
-        redirect('index.php?page=candidates&job=' . (int) ($_POST['job_id'] ?? 0));
-    }
-
-    if ($action === 'follow_employer' || $action === 'unfollow_employer') {
-        $jobseeker = require_role('jobseeker');
-        $employerId = filter_input(INPUT_POST, 'employer_id', FILTER_VALIDATE_INT);
-        $statement = $pdo->prepare(
-            "SELECT id FROM users WHERE id = ? AND role = 'employer' AND status = 'active'"
-        );
-        $statement->execute([$employerId]);
-        if (!$employerId || (int) $employerId === (int) $jobseeker['id'] || !$statement->fetchColumn()) {
-            flash('That employer is not available to follow.', 'error');
-            redirect('index.php?page=updates');
-        }
-
-        if ($action === 'follow_employer') {
-            try {
-                $pdo->prepare('INSERT INTO employer_follows (employee_id, employer_id) VALUES (?, ?)')
-                    ->execute([$jobseeker['id'], $employerId]);
-                flash('You are now following this employer. Their updates will appear in your feed.');
-            } catch (PDOException $exception) {
-                if ($exception->getCode() !== '23000') {
-                    throw $exception;
-                }
-                flash('You are already following this employer.', 'error');
-            }
-        } else {
-            $statement = $pdo->prepare('DELETE FROM employer_follows WHERE employee_id = ? AND employer_id = ?');
-            $statement->execute([$jobseeker['id'], $employerId]);
-            $unfollowed = $statement->rowCount() > 0;
-            flash($unfollowed ? 'You have unfollowed this employer.' : 'You were not following this employer.', $unfollowed ? 'success' : 'error');
-        }
-        redirect('index.php?page=updates');
-    }
-
-    if ($action === 'create_employer_update') {
-        $employer = require_role('employer');
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $body = trim((string) ($_POST['body'] ?? ''));
-        if ($title === '' || mb_strlen($title) > 160 || $body === '' || mb_strlen($body) > 3000) {
-            flash('Add an update title and message. Titles can be up to 160 characters and messages up to 3,000 characters.', 'error');
-            redirect('index.php?page=updates');
-        }
-
-        $pdo->prepare('INSERT INTO employer_updates (employer_id, title, body) VALUES (?, ?, ?)')
-            ->execute([$employer['id'], $title, $body]);
-        flash('Your update has been published to your followers.');
-        redirect('index.php?page=updates');
-    }
-
-    if ($action === 'toggle_job') {
-        $employer = require_role('employer');
-        $jobId = filter_input(INPUT_POST, 'job_id', FILTER_VALIDATE_INT);
-        $status = (string) ($_POST['status'] ?? '');
-        if (!$jobId || !in_array($status, ['open', 'closed'], true)) {
-            flash('Choose a valid opening status.', 'error');
-            redirect('index.php?page=jobs');
-        }
-        $nextStatus = $status === 'closed' ? 'closed' : 'pending';
-        $statement = $pdo->prepare(
-            "UPDATE jobs SET status = ? WHERE id = ? AND employer_id = ? AND status IN ('open', 'closed', 'rejected')"
-        );
-        $statement->execute([$nextStatus, $jobId, $employer['id']]);
-        flash($nextStatus === 'pending'
-            ? 'Your opening has been resubmitted for admin approval before it is published.'
-            : 'Opening closed.');
-        redirect('index.php?page=jobs');
-    }
-
-    flash('That action was not recognised.', 'error');
-    redirect('index.php');
-}
-
-$user = current_user();
-$flashMessage = $_SESSION['flash'] ?? null;
-unset($_SESSION['flash']);
-$knownPages = ['home', 'how-it-works', 'dashboard', 'employee-dashboard', 'admin', 'opportunities', 'profile', 'applications', 'jobs', 'candidates', 'messages', 'updates', 'login', 'register', 'forgot-password', 'reset-password'];
-if (!in_array($page, $knownPages, true)) {
-    $page = $defaultPage;
-}
-if ($user && in_array($page, ['login', 'register', 'forgot-password', 'reset-password'], true)) {
-    redirect('index.php');
-}
-if (!$user && $page === 'dashboard') {
-    $page = 'home';
-}
-if (!$user && $page === 'employee-dashboard') {
-    redirect('index.php?page=login');
-}
-if (!$user && $page === 'admin') {
-    redirect('index.php?page=login');
-}
-if (!$user && !in_array($page, ['home', 'how-it-works', 'login', 'register', 'forgot-password', 'reset-password', 'opportunities'], true)) {
-    redirect('index.php?page=home');
-}
-if ($user && $page === 'employee-dashboard' && $user['role'] !== 'jobseeker') {
-    redirect($user['role'] === 'admin' ? 'admin-dashboard.php' : 'index.php');
-}
-if ($user && $user['role'] === 'jobseeker' && in_array($page, ['jobs', 'candidates'], true)) {
-    redirect('index.php');
-}
-if ($user && $user['role'] === 'employer' && in_array($page, ['opportunities', 'profile', 'applications'], true)) {
-    redirect('index.php');
-}
-if ($user && $user['role'] !== 'admin' && $page === 'admin') {
-    redirect($user['role'] === 'jobseeker' ? 'employee-dashboard.php' : 'index.php');
-}
-if ($user && $user['role'] === 'admin' && !in_array($page, ['admin', 'messages', 'how-it-works'], true)) {
-    redirect('index.php?page=admin');
-}
-if ($user) {
-    $statement = $pdo->prepare('SELECT role, status FROM users WHERE id = ?');
-    $statement->execute([$user['id']]);
-    $accountState = $statement->fetch();
-    if (!$accountState || $accountState['status'] !== 'active' || $accountState['role'] !== $user['role']) {
-        $_SESSION = [];
-        session_regenerate_id(true);
-        flash('Your account is not active. Contact the SkillPass admin for assistance.', 'error');
-        redirect('index.php?page=login');
-    }
-}
-
-$profile = null;
-$skillNames = [];
-$projects = [];
-$openJobs = [];
-$applications = [];
-$jobs = [];
-$applicantRows = [];
-$selectedJob = null;
-$gapSkill = null;
-$pendingJobs = [];
-$adminApplications = [];
-$messages = [];
-$messageRecipients = [];
-$employers = [];
-$employerUpdates = [];
-$followedEmployerCount = 0;
-$counts = ['applications' => 0, 'shortlisted' => 0, 'projects' => 0, 'jobs' => 0, 'candidates' => 0, 'unread_messages' => 0, 'followers' => 0];
-
-if ($user && $user['role'] === 'admin') {
-    $counts['active_accounts'] = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'active'")->fetchColumn();
-    $counts['pending_jobs'] = (int) $pdo->query("SELECT COUNT(*) FROM jobs WHERE status = 'pending'")->fetchColumn();
-    $counts['open_jobs'] = (int) $pdo->query("SELECT COUNT(*) FROM jobs WHERE status = 'open'")->fetchColumn();
-    $counts['applications'] = (int) $pdo->query('SELECT COUNT(*) FROM applications')->fetchColumn();
-    $counts['unread_messages'] = (int) $pdo->query(
-        "SELECT COUNT(*) FROM messages m JOIN users u ON u.id = m.recipient_id WHERE u.role = 'admin' AND m.read_at IS NULL"
-    )->fetchColumn();
-
-    $pendingJobs = $pdo->query(
-        "SELECT j.id, j.title, j.company, j.location, j.work_type, j.description, j.created_at, u.name AS employer_name
-         FROM jobs j JOIN users u ON u.id = j.employer_id WHERE j.status = 'pending' ORDER BY j.created_at ASC"
-    )->fetchAll();
-    $adminApplications = $pdo->query(
-        'SELECT a.id, a.status, a.created_at, j.title, j.company, u.name AS candidate_name
-         FROM applications a JOIN jobs j ON j.id = a.job_id JOIN users u ON u.id = a.jobseeker_id
-         ORDER BY a.created_at DESC LIMIT 8'
-    )->fetchAll();
-    $messageRecipients = $pdo->query(
-        "SELECT id, name, email, role, status FROM users WHERE role IN ('employer', 'jobseeker') AND status = 'active' ORDER BY name"
-    )->fetchAll();
-    $messages = $pdo->query(
-        'SELECT m.id, m.sender_id, m.recipient_id, m.body, m.read_at, m.created_at,
-                sender.name AS sender_name, sender.role AS sender_role,
-                recipient.name AS recipient_name, recipient.role AS recipient_role
-         FROM messages m JOIN users sender ON sender.id = m.sender_id
-         JOIN users recipient ON recipient.id = m.recipient_id
-         ORDER BY m.created_at DESC LIMIT 100'
-    )->fetchAll();
-    if ($page === 'messages') {
-        $pdo->prepare('UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE recipient_id = ? AND read_at IS NULL')
-            ->execute([$user['id']]);
-    }
-}
-
-if ($user && $user['role'] !== 'admin') {
-    $statement = $pdo->prepare('SELECT COUNT(*) FROM messages WHERE recipient_id = ? AND read_at IS NULL');
-    $statement->execute([$user['id']]);
-    $counts['unread_messages'] = (int) $statement->fetchColumn();
-    if ($page === 'messages') {
-        $statement = $pdo->prepare(
-            'SELECT m.id, m.sender_id, m.recipient_id, m.body, m.read_at, m.created_at,
-                    sender.name AS sender_name, sender.role AS sender_role,
-                    recipient.name AS recipient_name, recipient.role AS recipient_role
-             FROM messages m JOIN users sender ON sender.id = m.sender_id
-             JOIN users recipient ON recipient.id = m.recipient_id
-             WHERE m.sender_id = ? OR m.recipient_id = ? ORDER BY m.created_at DESC LIMIT 100'
-        );
-        $statement->execute([$user['id'], $user['id']]);
-        $messages = $statement->fetchAll();
-        $pdo->prepare('UPDATE messages SET read_at = CURRENT_TIMESTAMP WHERE recipient_id = ? AND read_at IS NULL')
-            ->execute([$user['id']]);
-    }
-}
-
-if ($user && $user['role'] === 'jobseeker') {
-    $statement = $pdo->prepare('SELECT headline, location, bio FROM profiles WHERE user_id = ?');
-    $statement->execute([$user['id']]);
-    $profile = $statement->fetch() ?: ['headline' => '', 'location' => '', 'bio' => ''];
-
-    $statement = $pdo->prepare(
-        'SELECT s.name FROM user_skills us JOIN skills s ON s.id = us.skill_id WHERE us.user_id = ? ORDER BY s.name'
-    );
-    $statement->execute([$user['id']]);
-    $skillNames = array_column($statement->fetchAll(), 'name');
-
-    $statement = $pdo->prepare('SELECT id, title, description, evidence_url, created_at FROM projects WHERE user_id = ? ORDER BY created_at DESC');
-    $statement->execute([$user['id']]);
-    $projects = $statement->fetchAll();
-
-    $statement = $pdo->prepare(
-        "SELECT j.id, j.title, j.company, j.location, j.work_type, j.description, j.created_at,
-                u.name AS employer_name,
-                (SELECT GROUP_CONCAT(s.name ORDER BY s.name SEPARATOR ', ')
-                 FROM job_skills js JOIN skills s ON s.id = js.skill_id WHERE js.job_id = j.id) AS skills,
-                (SELECT c.title FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_title,
-                (SELECT c.instructions FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_instructions,
-                EXISTS(SELECT 1 FROM applications a WHERE a.job_id = j.id AND a.jobseeker_id = ?) AS applied
-         FROM jobs j JOIN users u ON u.id = j.employer_id
-         WHERE j.status = 'open' ORDER BY j.created_at DESC"
-    );
-    $statement->execute([$user['id']]);
-    $openJobs = $statement->fetchAll();
-
-    $statement = $pdo->prepare(
-        "SELECT a.id, a.status, a.cover_note, a.created_at, j.id AS job_id, j.title, j.company, j.location,
-                c.id AS challenge_id, c.title AS challenge_title, c.instructions,
-                s.id AS submission_id, s.response AS submission_response, s.evidence_url AS submission_evidence,
-                s.status AS challenge_status, s.reviewer_note, s.submitted_at
-         FROM applications a
-         JOIN jobs j ON j.id = a.job_id
-         LEFT JOIN challenges c ON c.job_id = j.id
-         LEFT JOIN challenge_submissions s ON s.challenge_id = c.id AND s.jobseeker_id = a.jobseeker_id
-         WHERE a.jobseeker_id = ? ORDER BY a.created_at DESC"
-    );
-    $statement->execute([$user['id']]);
-    $applications = $statement->fetchAll();
-
-    $statement = $pdo->prepare("SELECT COUNT(*) FROM applications WHERE jobseeker_id = ?");
-    $statement->execute([$user['id']]);
-    $counts['applications'] = (int) $statement->fetchColumn();
-    $statement = $pdo->prepare("SELECT COUNT(*) FROM applications WHERE jobseeker_id = ? AND status = 'shortlisted'");
-    $statement->execute([$user['id']]);
-    $counts['shortlisted'] = (int) $statement->fetchColumn();
-    $counts['projects'] = count($projects);
-
-    if ($skillNames) {
-        $statement = $pdo->prepare(
-            "SELECT s.name, COUNT(DISTINCT js.job_id) AS demand
-             FROM job_skills js
-             JOIN jobs j ON j.id = js.job_id AND j.status = 'open'
-             JOIN skills s ON s.id = js.skill_id
-             WHERE s.id NOT IN (
-               SELECT us.skill_id FROM user_skills us WHERE us.user_id = ?
-             )
-             GROUP BY s.id ORDER BY demand DESC, s.name ASC LIMIT 1"
-        );
-        $statement->execute([$user['id']]);
-        $gapSkill = $statement->fetch() ?: null;
-    } else {
-        $statement = $pdo->query(
-            "SELECT s.name, COUNT(DISTINCT js.job_id) AS demand
-             FROM job_skills js
-             JOIN jobs j ON j.id = js.job_id AND j.status = 'open'
-             JOIN skills s ON s.id = js.skill_id
-             GROUP BY s.id ORDER BY demand DESC, s.name ASC LIMIT 1"
-        );
-        $gapSkill = $statement->fetch() ?: null;
-    }
-
-    if ($page === 'updates') {
-        $statement = $pdo->prepare(
-            "SELECT u.id, u.name,
-                    EXISTS(SELECT 1 FROM employer_follows ef WHERE ef.employee_id = ? AND ef.employer_id = u.id) AS is_following,
-                    (SELECT COUNT(*) FROM employer_follows ef WHERE ef.employer_id = u.id) AS follower_count,
-                    (SELECT MAX(eu.created_at) FROM employer_updates eu WHERE eu.employer_id = u.id) AS latest_update,
-                    (SELECT COUNT(*) FROM jobs j WHERE j.employer_id = u.id AND j.status = 'open') AS open_role_count
-             FROM users u WHERE u.role = 'employer' AND u.status = 'active'
-             ORDER BY is_following DESC, latest_update DESC, u.name ASC"
-        );
-        $statement->execute([$user['id']]);
-        $employers = $statement->fetchAll();
-        $followedEmployerCount = count(array_filter(
-            $employers,
-            static fn (array $employer): bool => (int) $employer['is_following'] === 1
+        $driverErrorCode = (string) ($exception->errorInfo[1] ?? 'unknown');
+        error_log(sprintf(
+            'SkillsPassAurora database action "%s" failed (SQLSTATE %s, driver error %s).',
+            $action,
+            (string) $exception->getCode(),
+            $driverErrorCode
         ));
-
-        $statement = $pdo->prepare(
-            "SELECT eu.id, eu.title, eu.body, eu.created_at, u.id AS employer_id, u.name AS employer_name
-             FROM employer_updates eu
-             JOIN users u ON u.id = eu.employer_id AND u.status = 'active'
-             JOIN employer_follows ef ON ef.employer_id = eu.employer_id AND ef.employee_id = ?
-             ORDER BY eu.created_at DESC LIMIT 50"
-        );
-        $statement->execute([$user['id']]);
-        $employerUpdates = $statement->fetchAll();
+        $notice = match ([$action, (string) $exception->getCode()]) {
+            ['register', '23000'] => 'An account already exists for that email.',
+            ['apply_job', '23000'] => 'You have already applied for this job.',
+            ['create_job', '42S02'] => 'The jobs table is missing. Import schema.sql into the configured database, then try again.',
+            ['create_job', '42S22'] => 'The jobs table does not match the current schema. Update it using schema.sql, then try again.',
+            default => 'The request could not be completed. Check the database setup and try again.',
+        };
+        $noticeType = 'error';
+        $view = $action === 'login' || $action === 'register' ? 'auth' : $view;
+    } catch (RuntimeException $exception) {
+        if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $notice = $exception->getMessage();
+        $noticeType = 'error';
+        $view = $action === 'verify' || $action === 'resend' ? 'verify' : ($action === 'login' || $action === 'register' ? 'auth' : $view);
     }
 }
 
-if ($user && $user['role'] === 'employer') {
-    $statement = $pdo->prepare(
-        "SELECT j.id, j.title, j.company, j.location, j.work_type, j.description, j.status, j.created_at,
-                (SELECT GROUP_CONCAT(s.name ORDER BY s.name SEPARATOR ', ')
-                 FROM job_skills js JOIN skills s ON s.id = js.skill_id WHERE js.job_id = j.id) AS skills,
-                (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applicant_count,
-                (SELECT c.title FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_title,
-                (SELECT c.instructions FROM challenges c WHERE c.job_id = j.id LIMIT 1) AS challenge_instructions
-         FROM jobs j WHERE j.employer_id = ? ORDER BY j.created_at DESC"
+if ($view === 'auth' && isset($_SESSION['pending_login_user_id'])) {
+    $view = 'verify';
+}
+if ($view === 'verify' && !isset($_SESSION['pending_login_user_id'])) {
+    $view = 'auth';
+}
+if (signed_in_user() !== null) {
+    $view = $view === 'jobs' ? 'jobs' : 'dashboard';
+}
+
+try {
+    $pdo = db();
+    $statement = $pdo->query(
+        "SELECT jobs.*, users.display_name AS employer_name,
+                (SELECT COUNT(*) FROM applications WHERE applications.job_id = jobs.id) AS application_count
+         FROM jobs
+         INNER JOIN users ON users.id = jobs.employer_id
+         ORDER BY (jobs.status = 'available') DESC, jobs.created_at DESC"
     );
-    $statement->execute([$user['id']]);
     $jobs = $statement->fetchAll();
-    $counts['jobs'] = count($jobs);
-    foreach ($jobs as $job) {
-        $counts['candidates'] += (int) $job['applicant_count'];
-    }
-    $statement = $pdo->prepare(
-        "SELECT COUNT(*) FROM jobs WHERE employer_id = ? AND status = 'open'"
-    );
-    $statement->execute([$user['id']]);
-    $counts['open_jobs'] = (int) $statement->fetchColumn();
-    $statement = $pdo->prepare(
-        "SELECT COUNT(*) FROM applications a JOIN jobs j ON j.id = a.job_id
-         WHERE j.employer_id = ? AND a.status = 'shortlisted'"
-    );
-    $statement->execute([$user['id']]);
-    $counts['shortlisted'] = (int) $statement->fetchColumn();
-    $statement = $pdo->prepare('SELECT COUNT(*) FROM employer_follows WHERE employer_id = ?');
-    $statement->execute([$user['id']]);
-    $counts['followers'] = (int) $statement->fetchColumn();
+    $jobsLoaded = true;
 
-    if ($page === 'updates') {
+    $user = signed_in_user();
+    if ($user !== null && $user['role'] === 'employer') {
         $statement = $pdo->prepare(
-            'SELECT id, title, body, created_at FROM employer_updates WHERE employer_id = ? ORDER BY created_at DESC LIMIT 50'
+            'SELECT applications.job_id, applications.candidate_id, applications.status,
+                    applications.cover_letter, applications.relevant_experience, applications.portfolio_url,
+                    applications.created_at, users.display_name AS candidate_name, users.email AS candidate_email
+             FROM applications
+             INNER JOIN jobs ON jobs.id = applications.job_id
+             INNER JOIN users ON users.id = applications.candidate_id
+             WHERE jobs.employer_id = :employer_id
+             ORDER BY applications.created_at DESC'
         );
-        $statement->execute([$user['id']]);
-        $employerUpdates = $statement->fetchAll();
-    }
-
-    if ($page === 'candidates') {
-        $jobId = filter_input(INPUT_GET, 'job', FILTER_VALIDATE_INT);
-        $statement = $pdo->prepare('SELECT * FROM jobs WHERE id = ? AND employer_id = ?');
-        $statement->execute([$jobId, $user['id']]);
-        $selectedJob = $statement->fetch() ?: null;
-        if (!$selectedJob) {
-            http_response_code(404);
-            exit('Opening not found.');
+        $statement->execute(['employer_id' => $user['id']]);
+        foreach ($statement->fetchAll() as $application) {
+            $applicationsByJob[$application['job_id']][] = $application;
         }
-
-        $statement = $pdo->prepare(
-            'SELECT a.id AS application_id, a.status AS application_status, a.cover_note, a.created_at AS applied_at,
-                    u.id AS candidate_id, u.name,
-                    p.headline, p.location, p.bio,
-                    c.id AS challenge_id, c.title AS challenge_title,
-                    s.id AS submission_id, s.response AS submission_response, s.evidence_url AS submission_evidence,
-                    s.status AS challenge_status, s.reviewer_note, s.submitted_at
-             FROM applications a
-             JOIN users u ON u.id = a.jobseeker_id
-             LEFT JOIN profiles p ON p.user_id = u.id
-             LEFT JOIN challenges c ON c.job_id = a.job_id
-             LEFT JOIN challenge_submissions s ON s.challenge_id = c.id AND s.jobseeker_id = u.id
-             WHERE a.job_id = ? ORDER BY a.created_at ASC'
-        );
-        $statement->execute([$selectedJob['id']]);
-        $applicantRows = $statement->fetchAll();
-
-        if ($applicantRows) {
-            $candidateIds = array_map(static fn (array $row): int => (int) $row['candidate_id'], $applicantRows);
-            $candidatePlaceholders = implode(',', array_fill(0, count($candidateIds), '?'));
-            $statement = $pdo->prepare(
-                "SELECT us.user_id, s.name FROM user_skills us JOIN skills s ON s.id = us.skill_id
-                 WHERE us.user_id IN ({$candidatePlaceholders}) ORDER BY s.name"
-            );
-            $statement->execute($candidateIds);
-            $skillsByCandidate = [];
-            foreach ($statement->fetchAll() as $row) {
-                $skillsByCandidate[(int) $row['user_id']][] = $row['name'];
-            }
-
-            $statement = $pdo->prepare(
-                "SELECT user_id, title, description, evidence_url
-                 FROM projects WHERE user_id IN ({$candidatePlaceholders}) ORDER BY created_at DESC"
-            );
-            $statement->execute($candidateIds);
-            $projectsByCandidate = [];
-            foreach ($statement->fetchAll() as $row) {
-                $projectsByCandidate[(int) $row['user_id']][] = $row;
-            }
-
-            $statement = $pdo->prepare(
-                'SELECT s.name FROM job_skills js JOIN skills s ON s.id = js.skill_id WHERE js.job_id = ?'
-            );
-            $statement->execute([$selectedJob['id']]);
-            $requiredSkills = array_column($statement->fetchAll(), 'name');
-
-            foreach ($applicantRows as &$candidate) {
-                $candidateSkills = $skillsByCandidate[(int) $candidate['candidate_id']] ?? [];
-                $candidateProjects = $projectsByCandidate[(int) $candidate['candidate_id']] ?? [];
-                $candidate['skills'] = $candidateSkills;
-                $matchedSkills = array_values(array_intersect(array_map('strtolower', $requiredSkills), array_map('strtolower', $candidateSkills)));
-                $skillScore = $requiredSkills ? (count($matchedSkills) / count($requiredSkills)) * 70 : 0;
-                $projectScore = min(count($candidateProjects) * 5, 20);
-                $challengeScore = $candidate['challenge_status'] === 'passed' ? 10 : ($candidate['challenge_status'] === 'submitted' ? 5 : 0);
-                $candidate['matched_skills'] = $matchedSkills;
-                $candidate['required_skills'] = $requiredSkills;
-                $candidate['score'] = (int) round($skillScore + $projectScore + $challengeScore);
-                $candidate['skill_points'] = $skillScore;
-                $candidate['project_points'] = $projectScore;
-                $candidate['challenge_points'] = $challengeScore;
-                $candidate['projects'] = $candidateProjects;
-                $candidate['project_count'] = count($candidate['projects']);
-            }
-            unset($candidate);
-            usort($applicantRows, static fn (array $a, array $b): int => $b['score'] <=> $a['score'] ?: strcmp((string) $a['applied_at'], (string) $b['applied_at']));
+    } elseif ($user !== null && $user['role'] === 'candidate') {
+        $statement = $pdo->prepare('SELECT job_id, status FROM applications WHERE candidate_id = :candidate_id');
+        $statement->execute(['candidate_id' => $user['id']]);
+        foreach ($statement->fetchAll() as $application) {
+            $candidateApplications[$application['job_id']] = $application['status'];
         }
     }
+} catch (PDOException $exception) {
+    $notice = 'Job listings could not be loaded. Check the database setup and try again.';
+    $noticeType = 'error';
 }
+?>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SkillsPassAurora | Proving What You Can Do</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="<?= $view === 'landing' ? 'landing-site' : '' ?>">
+<header class="topbar">
+    <nav class="nav" aria-label="Main navigation">
+        <a class="brand" href="index.php" aria-label="SkillsPassAurora home">
+            <span class="brand-logo-frame">
+                <img class="brand-logo" src="images/logo.jpeg" alt="">
+            </span>
+            <span class="brand-name">SkillsPassAurora</span>
+        </a>
+        <div class="landing-nav-links">
+            <a href="index.php?page=jobs">Browse jobs</a>
+            <a href="index.php#contact">Contact us</a>
+        </div>
+        <?php if (signed_in_user() !== null): ?>
+            <form method="post">
+                <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                <input type="hidden" name="action" value="logout">
+                <button class="secondary" type="submit">Sign out</button>
+            </form>
+        <?php else: ?>
+            <a class="nav-login" href="index.php?page=auth&amp;mode=login">Sign in</a>
+            <a class="nav-join" href="index.php?page=auth&amp;mode=signup">Get started</a>
+        <?php endif; ?>
+    </nav>
+</header>
+<main>
+    <?php if ($notice !== ''): ?>
+        <div class="notice <?= $noticeType === 'error' ? 'notice-error' : '' ?>" role="status"><?= escape($notice) ?></div>
+    <?php endif; ?>
 
-function badge_class(string $status): string
-{
-    return match ($status) {
-        'shortlisted', 'passed', 'hired' => 'badge badge-green',
-        'reviewing', 'submitted' => 'badge badge-blue',
-        'declined', 'needs_work', 'closed', 'rejected' => 'badge badge-muted',
-        'pending' => 'badge badge-amber',
-        default => 'badge',
+    <?php if ($view === 'verify'): ?>
+        <section class="auth-wrap">
+            <div class="auth-panel verify-panel">
+                <p class="eyebrow">Extra sign-in security</p>
+                <h1>Confirm it's you</h1>
+                <p class="muted">Enter the six-digit sign-in code sent to <strong><?= escape($pendingEmail ?: 'your email') ?></strong>.</p>
+                <form class="stack" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="verify">
+                    <div class="field">
+                        <label for="otp">Sign-in code</label>
+                        <input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+                    </div>
+                    <button type="submit">Verify and sign in</button>
+                </form>
+                <form class="resend-form" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="resend">
+                    <button class="text-button" type="submit">Send a new code</button>
+                </form>
+            </div>
+        </section>
+    <?php elseif ($view === 'landing'): ?>
+        <section class="landing-hero">
+            <div class="landing-hero-inner">
+                <div class="landing-copy">
+                    <p class="eyebrow">SkillsPassAurora &middot; Skills-first opportunities</p>
+                    <h1>Find work that fits your skills.</h1>
+                    <p class="landing-description">Discover opportunities, show employers what you can do, and build your next career step with confidence.</p>
+                    <div class="landing-actions">
+                        <a class="primary-link" href="index.php?page=jobs">Browse available jobs <span aria-hidden="true">&rarr;</span></a>
+                    </div>
+                    <div class="landing-proof">
+                        <span><strong>Show your skills</strong><br>Share experience and work samples</span>
+                        <span><strong>Meet opportunity</strong><br>Connect with employers</span>
+                    </div>
+                </div>
+                <div class="slideshow" aria-label="People connecting through work">
+                    <div class="slides">
+                        <?php
+                        $landingSlides = [
+                            ['images/image 1.jpg', 'Your skills open doors', 'Show employers what you can bring to their team.'],
+                            ['images/image 5.jpg', 'Make the next connection', 'Find people and opportunities that move you forward.'],
+                            ['images/images 2.jpg', 'Bring your experience forward', 'Explore a role where your strengths can make a difference.'],
+                            ['images/image 3.jpg', 'Build your next opportunity', 'Connect your skills with work that matters.'],
+                            ['images/image 4.jpg', 'Let your work speak for you', 'Share your skills and grow your career.'],
+                            ['images/images 6.jpg', 'Find the right fit', 'Meet employers looking for practical ability.'],
+                            ['images/images 8.jpg', 'Take your next step', 'Discover opportunities and show what you can do.'],
+                            ['images/images 10.jpg', 'Skills bring people together', 'Build a stronger future through meaningful work.'],
+                            ['images/images 9.jpg', 'A new opportunity starts here', 'Put your experience in front of the right people.'],
+                            ['images/handshake.avif', 'Make opportunity happen', 'Start with your skills and keep moving forward.'],
+                        ];
+                        foreach ($landingSlides as $index => [$image, $caption, $description]):
+                        ?>
+                            <article class="slide<?= $index === 0 ? ' is-active' : '' ?>" aria-hidden="<?= $index === 0 ? 'false' : 'true' ?>">
+                                <img src="<?= escape($image) ?>" alt="" <?= $index === 0 ? 'fetchpriority="high"' : 'loading="lazy"' ?>>
+                                <div class="slide-caption">
+                                    <span class="slide-kicker">Talent meets opportunity</span>
+                                    <h2><?= escape($caption) ?></h2>
+                                    <p><?= escape($description) ?></p>
+                                </div>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="slideshow-controls">
+                        <div class="slide-dots" aria-label="Choose a slide">
+                            <?php foreach ($landingSlides as $index => $_slide): ?>
+                                <button class="slide-dot<?= $index === 0 ? ' is-active' : '' ?>" type="button" data-slide-to="<?= $index ?>" aria-label="Show slide <?= $index + 1 ?>" aria-pressed="<?= $index === 0 ? 'true' : 'false' ?>"></button>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="slide-arrows">
+                            <button class="slide-arrow" type="button" data-slide-direction="-1" aria-label="Previous slide">&#8592;</button>
+                            <button class="slide-arrow" type="button" data-slide-direction="1" aria-label="Next slide">&#8594;</button>
+                        </div>
+                    </div>
+                    <span class="slide-count" aria-live="polite"><span data-slide-current>01</span> / <?= count($landingSlides) ?></span>
+                </div>
+            </div>
+        </section>
+        <section class="landing-categories" id="how-it-works">
+            <div class="landing-categories-inner">
+                <div class="landing-category-heading">
+                    <div>
+                        <p class="eyebrow">Explore your next move</p>
+                        <h2>Find opportunities by area</h2>
+                    </div>
+                    <a href="index.php?page=jobs">See all available jobs <span aria-hidden="true">&rarr;</span></a>
+                </div>
+                <div class="category-grid">
+                    <a class="category-card" href="index.php?page=jobs">
+                        <img src="images/images 2.jpg" alt="" loading="lazy">
+                        <span class="category-shade"></span>
+                        <span class="category-title">Technology</span>
+                        <span class="category-copy">Digital, web and technical skills</span>
+                    </a>
+                    <a class="category-card" href="index.php?page=jobs">
+                        <img src="images/image 3.jpg" alt="" loading="lazy">
+                        <span class="category-shade"></span>
+                        <span class="category-title">Business &amp; administration</span>
+                        <span class="category-copy">Operations, office and business support</span>
+                    </a>
+                    <a class="category-card" href="index.php?page=jobs">
+                        <img src="images/images 6.jpg" alt="" loading="lazy">
+                        <span class="category-shade"></span>
+                        <span class="category-title">Customer service</span>
+                        <span class="category-copy">Communication and customer care</span>
+                    </a>
+                    <a class="category-card" href="index.php?page=jobs">
+                        <img src="images/image 1.jpg" alt="" loading="lazy">
+                        <span class="category-shade"></span>
+                        <span class="category-title">Creative &amp; marketing</span>
+                        <span class="category-copy">Content, design and digital media</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+        <section class="landing-employer-callout" id="employers">
+            <div>
+                <p class="eyebrow">For employers</p>
+                <h2>Meet people who can do the work.</h2>
+                <p>Share an opportunity, review candidates’ skills and work samples, and find the right fit for your team.</p>
+            </div>
+            <a class="primary-link" href="index.php?page=auth&amp;mode=signup&amp;role=employer">Find your next hire <span aria-hidden="true">&rarr;</span></a>
+        </section>
+    <?php elseif ($view === 'jobs'): ?>
+        <section class="jobs-page-intro">
+            <p class="eyebrow">SkillsPassAurora opportunities</p>
+            <h1>Find your next opportunity.</h1>
+            <p class="muted">Explore current job openings and find a role that matches your skills.</p>
+        </section>
+    <?php elseif ($view === 'dashboard'): ?>
+        <?php $user = signed_in_user(); ?>
+        <section class="welcome-panel dashboard-welcome">
+            <p class="eyebrow">Welcome</p>
+            <h1>Welcome to SkillsPassAurora, <?= escape($user['display_name'] ?? '') ?>.</h1>
+            <p class="muted">Your <?= escape($user['role'] ?? '') ?> account is ready. Browse jobs and see their current availability below.</p>
+        </section>
+        <?php if (($user['role'] ?? '') === 'employer'): ?>
+            <section class="auth-panel job-form-panel">
+                <p class="eyebrow">For employers</p>
+                <h2>Post a job</h2>
+                <form class="stack" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="create_job">
+                    <div class="job-form-grid">
+                        <div class="field">
+                            <label for="job-title">Job title</label>
+                            <input id="job-title" name="title" maxlength="150" required>
+                        </div>
+                        <div class="field">
+                            <label for="job-location">Location</label>
+                            <input id="job-location" name="location" maxlength="150" placeholder="City or remote" required>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="employment-type">Job type</label>
+                        <select id="employment-type" name="employment_type" required>
+                            <option value="full-time">Full-time</option>
+                            <option value="part-time">Part-time</option>
+                            <option value="contract">Contract</option>
+                            <option value="temporary">Temporary</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="job-description">Description</label>
+                        <textarea id="job-description" name="description" rows="5" maxlength="10000" required></textarea>
+                    </div>
+                    <div class="field">
+                        <label for="job-skills">Skills sought <span class="muted">(optional)</span></label>
+                        <textarea id="job-skills" name="skills" rows="2" maxlength="2000" placeholder="For example: customer service, bookkeeping"></textarea>
+                    </div>
+                    <button type="submit">Post job as Available</button>
+                </form>
+            </section>
+        <?php endif; ?>
+    <?php else: ?>
+        <section class="auth-page">
+            <div class="auth-brand-panel">
+                <a class="back-home" href="index.php">&larr; Back to home</a>
+                <img src="images/logo.jpeg" alt="SkillsPassAurora — Proving What You Can Do">
+                <p>Real skills. Real opportunities. A brighter future.</p>
+            </div>
+            <div class="auth-panel auth-page-panel">
+                <p class="eyebrow"><?= $authMode === 'signup' ? 'Join the community' : 'Welcome back' ?></p>
+                <h1><?= $authMode === 'signup' ? 'Create your account' : 'Sign in to SkillsPass' ?></h1>
+                <p class="auth-intro"><?= $authMode === 'signup' ? ($signupRole === '' ? 'Choose how you want to use SkillsPassAurora.' : 'Create your ' . ($signupRole === 'candidate' ? 'employee' : 'employer') . ' account.') : 'Continue to your SkillsPassAurora account.' ?></p>
+                <?php if ($authMode === 'login'): ?>
+                <form class="stack" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="login">
+                    <div class="field">
+                        <label for="login-email">Email address</label>
+                        <input id="login-email" name="email" type="email" autocomplete="email" required>
+                    </div>
+                    <div class="field">
+                        <label for="login-password">Password</label>
+                        <div class="password-wrap">
+                            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                            <button class="password-toggle" type="button" data-password-toggle="login-password" aria-pressed="false">Show</button>
+                        </div>
+                    </div>
+                    <button type="submit">Sign in</button>
+                </form>
+                <p class="auth-switch">New to SkillsPassAurora? <a href="index.php?page=auth&amp;mode=signup">Create an account</a></p>
+                <?php else: ?>
+                <?php if ($signupRole === ''): ?>
+                <div class="role-options">
+                    <a class="role-option" href="index.php?page=auth&amp;mode=signup&amp;role=candidate">
+                        <span class="role-option-icon" aria-hidden="true">&#128100;</span>
+                        <span class="role-option-copy">
+                            <strong>Employee</strong>
+                            <span>I'm looking for work and want to show employers my skills.</span>
+                        </span>
+                        <span class="role-option-arrow" aria-hidden="true">&rarr;</span>
+                    </a>
+                    <a class="role-option" href="index.php?page=auth&amp;mode=signup&amp;role=employer">
+                        <span class="role-option-icon" aria-hidden="true">&#127970;</span>
+                        <span class="role-option-copy">
+                            <strong>Employer</strong>
+                            <span>I'm hiring and want to find skilled people for my business.</span>
+                        </span>
+                        <span class="role-option-arrow" aria-hidden="true">&rarr;</span>
+                    </a>
+                </div>
+                <?php else: ?>
+                <div class="selected-role">
+                    <span>Creating an account as an <strong><?= $signupRole === 'candidate' ? 'Employee' : 'Employer' ?></strong></span>
+                    <a href="index.php?page=auth&amp;mode=signup">Change</a>
+                </div>
+                <form class="stack" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="register">
+                    <input type="hidden" name="role" value="<?= escape($signupRole) ?>">
+                    <div class="field">
+                        <label for="display-name">Your name or company</label>
+                        <input id="display-name" name="display_name" maxlength="150" autocomplete="name" required>
+                    </div>
+                    <div class="field">
+                        <label for="register-email">Email address</label>
+                        <input id="register-email" name="email" type="email" autocomplete="email" required>
+                    </div>
+                    <div class="field">
+                        <label for="register-password">Create password</label>
+                        <div class="password-wrap">
+                            <input id="register-password" name="password" type="password" minlength="10" autocomplete="new-password" required>
+                            <button class="password-toggle" type="button" data-password-toggle="register-password" aria-pressed="false">Show</button>
+                        </div>
+                        <span class="field-hint">Use at least 10 characters.</span>
+                    </div>
+                    <button type="submit">Create account</button>
+                </form>
+                <?php endif; ?>
+                <p class="auth-switch">Already have an account? <a href="index.php?page=auth&amp;mode=login">Sign in</a></p>
+                <?php endif; ?>
+            </div>
+        </section>
+    <?php endif; ?>
+    <?php if ($view === 'jobs' || $view === 'dashboard'): ?>
+        <section class="jobs-section" id="jobs">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">SkillsPassAurora opportunities</p>
+                    <h2><?= $view === 'jobs' ? 'Available jobs' : 'Browse jobs' ?></h2>
+                </div>
+                <p class="muted"><?= $view === 'jobs' ? 'Explore current opportunities and check each listing’s availability before applying.' : 'Each listing shows whether it is available or has been taken.' ?></p>
+            </div>
+            <?php if (!$jobsLoaded): ?>
+                <div class="empty-state">Job listings are unavailable right now.</div>
+            <?php elseif ($jobs === []): ?>
+                <div class="empty-state">No jobs have been posted yet. Check back soon.</div>
+            <?php else: ?>
+                <div class="job-list">
+                    <?php foreach ($jobs as $job): ?>
+                        <?php
+                        $jobId = (int) $job['id'];
+                        $jobStatus = (string) $job['status'];
+                        $user = signed_in_user();
+                        $applicationStatus = $candidateApplications[$jobId] ?? null;
+                        ?>
+                        <article class="job-card">
+                            <div class="job-card-heading">
+                                <div>
+                                    <p class="job-employer"><?= escape($job['employer_name']) ?></p>
+                                    <h3><?= escape(strcasecmp((string) $job['title'], 'software expert') === 0 ? 'Software Expert' : $job['title']) ?></h3>
+                                </div>
+                                <span class="status-badge <?= $jobStatus === 'available' ? 'status-available' : 'status-taken' ?>"><?= $jobStatus === 'available' ? 'Available' : 'Taken' ?></span>
+                            </div>
+                            <p class="job-meta"><?= escape($job['location']) ?> <span aria-hidden="true">&middot;</span> <?= escape(ucwords(str_replace('-', ' ', (string) $job['employment_type']))) ?></p>
+                            <p class="job-description"><?= nl2br(escape($job['description'])) ?></p>
+                            <?php if (!empty($job['skills'])): ?>
+                                <p class="job-skills"><strong>Skills sought:</strong> <?= escape($job['skills']) ?></p>
+                            <?php endif; ?>
+                            <div class="job-card-footer">
+                                <span class="muted"><?= (int) $job['application_count'] ?> application<?= (int) $job['application_count'] === 1 ? '' : 's' ?></span>
+                                <?php if ($user !== null && $user['role'] === 'candidate' && $jobStatus === 'available'): ?>
+                                    <?php if ($applicationStatus === null): ?>
+                                        <form class="application-form" method="post">
+                                            <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                                            <input type="hidden" name="action" value="apply_job">
+                                            <input type="hidden" name="job_id" value="<?= $jobId ?>">
+                                            <div class="field">
+                                                <label for="cover-letter-<?= $jobId ?>">Cover letter</label>
+                                                <textarea id="cover-letter-<?= $jobId ?>" name="cover_letter" rows="4" maxlength="5000" autocomplete="off" placeholder="Explain why you're a good fit for this role." required></textarea>
+                                            </div>
+                                            <div class="field">
+                                                <label for="relevant-experience-<?= $jobId ?>">Relevant experience <span class="muted">(optional)</span></label>
+                                                <textarea id="relevant-experience-<?= $jobId ?>" name="relevant_experience" rows="3" maxlength="3000" autocomplete="off" placeholder="Describe experience or skills related to this role."></textarea>
+                                            </div>
+                                            <div class="field">
+                                                <label for="portfolio-url-<?= $jobId ?>">Portfolio link <span class="muted">(optional)</span></label>
+                                                <input id="portfolio-url-<?= $jobId ?>" name="portfolio_url" type="url" maxlength="2048" autocomplete="off" placeholder="https://example.com/your-work">
+                                            </div>
+                                            <button type="submit">Apply</button>
+                                        </form>
+                                    <?php else: ?>
+                                        <span class="application-status">Application: <?= escape(ucfirst($applicationStatus)) ?></span>
+                                    <?php endif; ?>
+                                <?php elseif ($user !== null && $user['role'] === 'employer' && (int) $job['employer_id'] === (int) $user['id']): ?>
+                                    <span class="muted">Your job</span>
+                                <?php elseif ($user === null && $jobStatus === 'available'): ?>
+                                    <a class="job-login-link" href="index.php?page=auth&amp;mode=login">Sign in as a candidate to apply</a>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($user !== null && $user['role'] === 'employer' && (int) $job['employer_id'] === (int) $user['id']): ?>
+                                <div class="applicants">
+                                    <h4>Applicants</h4>
+                                    <?php $jobApplications = $applicationsByJob[$jobId] ?? []; ?>
+                                    <?php if ($jobApplications === []): ?>
+                                        <p class="muted">No applications yet.</p>
+                                    <?php else: ?>
+                                        <?php foreach ($jobApplications as $application): ?>
+                                            <div class="applicant-row">
+                                                <div>
+                                                    <strong><?= escape($application['candidate_name']) ?></strong>
+                                                    <a href="mailto:<?= escape($application['candidate_email']) ?>"><?= escape($application['candidate_email']) ?></a>
+                                                    <p><strong>Cover letter</strong><br><?= nl2br(escape($application['cover_letter'])) ?></p>
+                                                    <?php if (!empty($application['relevant_experience'])): ?>
+                                                        <p><strong>Relevant experience</strong><br><?= nl2br(escape($application['relevant_experience'])) ?></p>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($application['portfolio_url'])): ?>
+                                                        <p><strong>Portfolio:</strong> <a href="<?= escape($application['portfolio_url']) ?>" target="_blank" rel="noopener noreferrer"><?= escape($application['portfolio_url']) ?></a></p>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <?php if ($jobStatus === 'available' && $application['status'] === 'pending'): ?>
+                                                    <form method="post">
+                                                        <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                                                        <input type="hidden" name="action" value="hire_candidate">
+                                                        <input type="hidden" name="job_id" value="<?= $jobId ?>">
+                                                        <input type="hidden" name="candidate_id" value="<?= (int) $application['candidate_id'] ?>">
+                                                        <button type="submit">Select candidate</button>
+                                                    </form>
+                                                <?php else: ?>
+                                                    <span class="application-status"><?= escape(ucfirst((string) $application['status'])) ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+    <?php endif; ?>
+</main>
+<a class="whatsapp-contact" href="https://wa.me/237672828084?text=Hello%2C%20I%20would%20like%20to%20contact%20the%20SkillsPassAurora%20developer." target="_blank" rel="noopener noreferrer" aria-label="Contact the developer on WhatsApp">
+    <svg class="whatsapp-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M20.52 3.48A11.82 11.82 0 0 0 12.08 0C5.5 0 .15 5.35.15 11.93c0 2.1.55 4.16 1.6 5.97L.05 24l6.25-1.64a11.9 11.9 0 0 0 5.77 1.47h.01c6.58 0 11.93-5.35 11.93-11.93 0-3.19-1.24-6.19-3.49-8.42ZM12.08 21.8h-.01a9.9 9.9 0 0 1-5.04-1.38l-.36-.21-3.71.97.99-3.62-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.46 4.44-9.9 9.9-9.9 2.65 0 5.14 1.03 7.01 2.9a9.84 9.84 0 0 1 2.9 7c0 5.45-4.44 9.89-9.93 9.89Zm5.43-7.41c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.66.15-.2.3-.76.97-.93 1.17-.17.2-.34.22-.64.07-.3-.15-1.25-.46-2.38-1.47-.88-.78-1.47-1.75-1.64-2.05-.17-.3-.02-.46.13-.61.13-.13.3-.34.44-.51.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.2-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.07 2.87 1.22 3.07.15.2 2.1 3.2 5.08 4.49.71.31 1.27.49 1.7.63.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.69.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35Z"/>
+    </svg>
+    <span>Contact developer</span>
+</a>
+<footer class="site-footer" id="contact">SkillsPassAurora &middot; Proving What You Can Do</footer>
+<script>
+document.querySelectorAll('[data-password-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+        const input = document.getElementById(button.dataset.passwordToggle);
+        if (!input) return;
+        const reveal = input.type === 'password';
+        input.type = reveal ? 'text' : 'password';
+        button.textContent = reveal ? 'Hide' : 'Show';
+        button.setAttribute('aria-pressed', String(reveal));
+        button.setAttribute('aria-label', `${reveal ? 'Hide' : 'Show'} password`);
+    });
+});
+
+const slideshow = document.querySelector('.slideshow');
+if (slideshow) {
+    const slides = Array.from(slideshow.querySelectorAll('.slide'));
+    const dots = Array.from(slideshow.querySelectorAll('.slide-dot'));
+    const currentCount = slideshow.querySelector('[data-slide-current]');
+    let activeSlide = 0;
+    let rotation;
+
+    const showSlide = (index) => {
+        activeSlide = (index + slides.length) % slides.length;
+        slides.forEach((slide, slideIndex) => {
+            const isActive = slideIndex === activeSlide;
+            slide.classList.toggle('is-active', isActive);
+            slide.setAttribute('aria-hidden', String(!isActive));
+            dots[slideIndex].classList.toggle('is-active', isActive);
+            dots[slideIndex].setAttribute('aria-pressed', String(isActive));
+        });
+        if (currentCount) currentCount.textContent = String(activeSlide + 1).padStart(2, '0');
     };
-}
 
-function status_label(string $status): string
-{
-    return match ($status) {
-        'needs_work' => 'Needs another look',
-        'shortlisted' => 'Shortlisted',
-        'reviewing' => 'In review',
-        'submitted' => 'Submitted',
-        'passed' => 'Passed',
-        'declined' => 'Not selected',
-        'hired' => 'Hired',
-        'closed' => 'Closed',
-        'pending' => 'Awaiting admin approval',
-        'rejected' => 'Not approved',
-        'open' => 'Open',
-        default => ucfirst($status),
+    const stopRotation = () => window.clearInterval(rotation);
+    const startRotation = () => {
+        stopRotation();
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            rotation = window.setInterval(() => showSlide(activeSlide + 1), 4000);
+        }
     };
+
+    slideshow.querySelectorAll('[data-slide-direction]').forEach((button) => {
+        button.addEventListener('click', () => {
+            showSlide(activeSlide + Number(button.dataset.slideDirection));
+            startRotation();
+        });
+    });
+    dots.forEach((button) => {
+        button.addEventListener('click', () => {
+            showSlide(Number(button.dataset.slideTo));
+            startRotation();
+        });
+    });
+    slideshow.addEventListener('mouseenter', stopRotation);
+    slideshow.addEventListener('mouseleave', startRotation);
+    slideshow.addEventListener('focusin', stopRotation);
+    slideshow.addEventListener('focusout', (event) => {
+        if (!slideshow.contains(event.relatedTarget)) startRotation();
+    });
+    startRotation();
 }
-
-function candidate_display_name(string $name): string
-{
-    $parts = preg_split('/\s+/', trim($name)) ?: [];
-    if (count($parts) < 2) {
-        return $parts[0] ?? 'Candidate';
-    }
-
-    return $parts[0] . ' ' . mb_substr($parts[count($parts) - 1], 0, 1) . '.';
-}
-
-require __DIR__ . '/views/app.php';
+</script>
+</body>
+</html>
