@@ -119,8 +119,51 @@ button.text-button:hover { background: transparent; color: var(--blue); }
 .welcome-panel { padding: clamp(1.4rem, 4vw, 2.4rem); }
 .welcome-panel h1 { font-size: clamp(2rem, 4vw, 2.8rem); }
 .dashboard-welcome { margin-bottom: 1rem; }
+.profile-panel { margin-bottom: 2rem; border: 1px solid var(--line); border-radius: 7px; padding: clamp(1rem, 3vw, 1.5rem); background: var(--surface); }
+.profile-heading { display: flex; align-items: center; gap: 1rem; }
+.profile-heading h2 { margin: 0; font-size: 1.55rem; }
+.profile-heading .eyebrow { margin-bottom: .25rem; }
+.profile-heading .muted { margin: .25rem 0 0; }
+.profile-avatar-wrap { position: relative; display: grid; width: 88px; height: 88px; flex: 0 0 88px; }
+.profile-avatar { display: grid; width: 88px; height: 88px; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--blue-pale); object-fit: cover; }
+.profile-avatar-image { position: absolute; inset: 0; }
+.profile-avatar-image[hidden] { display: none; }
+.profile-avatar-fallback { color: var(--blue-dark); font-size: 2rem; font-weight: 800; }
+.profile-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1.5rem; margin: 1.25rem 0; }
+.profile-details > div { min-width: 0; }
+.profile-details dt { color: var(--muted); font-size: .78rem; font-weight: 700; }
+.profile-details dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
+.profile-picture-form { display: flex; flex-wrap: wrap; align-items: end; gap: .85rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+.profile-picture-form .field { flex: 1 1 280px; }
+.profile-picture-form input[type="file"] { padding: .45rem; }
+.profile-picture-form button { flex: 0 0 auto; }
+.profile-picture-status { flex: 1 1 100%; color: var(--muted); font-size: .82rem; }
 .job-form-panel { margin-bottom: 2rem; }
 .job-form-panel h2 { margin-bottom: 1rem; }
+.employer-insights { margin: 0 0 2rem; }
+.chart-live-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .75rem; }
+.chart-live-status { color: var(--muted); font-size: .82rem; }
+.chart-refresh-button { min-height: 36px; padding: .45rem .75rem; font-size: .8rem; }
+.dashboard-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; margin-bottom: 1rem; }
+.dashboard-metric { display: grid; gap: .3rem; border: 1px solid var(--line); border-radius: 7px; padding: 1rem; background: var(--surface); }
+.dashboard-metric span { color: var(--muted); font-size: .82rem; }
+.dashboard-metric strong { color: var(--blue-dark); font-size: 1.7rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.dashboard-charts { display: grid; grid-template-columns: 1.2fr 1fr; gap: 1rem; }
+.chart-panel { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 1rem; background: var(--surface); }
+.chart-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.chart-heading h3 { margin: 0; font: 700 1rem "Trebuchet MS", "Segoe UI", sans-serif; }
+.chart-heading .muted { margin: .25rem 0 0; font-size: .8rem; }
+.chart-total { min-width: 2rem; border-radius: 999px; padding: .25rem .55rem; background: var(--blue-pale); color: var(--blue-dark); font-size: .85rem; text-align: center; }
+.dashboard-chart { display: block; width: 100%; height: 230px; margin-top: .5rem; overflow: visible; }
+.dashboard-chart text { fill: var(--muted); font-family: "Trebuchet MS", "Segoe UI", sans-serif; font-size: 12px; }
+.dashboard-chart .chart-grid { stroke: var(--line); stroke-width: 1; }
+.dashboard-chart .chart-line { fill: none; stroke: var(--blue); stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+.dashboard-chart .chart-point { fill: var(--blue); stroke: white; stroke-width: 2; }
+.dashboard-chart .chart-bar-track { fill: var(--blue-pale); }
+.dashboard-chart .chart-bar-pending { fill: #e6a23c; }
+.dashboard-chart .chart-bar-accepted { fill: #31936b; }
+.dashboard-chart .chart-bar-rejected { fill: #c65a55; }
+.dashboard-chart .chart-no-data { fill: var(--muted); font-size: 14px; text-anchor: middle; }
 .job-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
 .jobs-section { margin-top: 2.5rem; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
@@ -150,6 +193,17 @@ button.text-button:hover { background: transparent; color: var(--blue); }
 .applicant-row p { margin: .35rem 0; overflow-wrap: anywhere; }
 .applicant-row a { font-size: .85rem; }
 .applicant-row button { min-height: 38px; font-size: .84rem; }
+.payment-instructions { display: grid; gap: .35rem; margin: .5rem 0; border-left: 3px solid var(--blue-accent); border-radius: 4px; padding: .8rem 1rem; background: var(--blue-pale); color: var(--blue-dark); font-size: .88rem; }
+.momo-demo-dialog { width: min(440px, calc(100% - 2rem)); border: 1px solid var(--line); border-radius: 10px; padding: 0; box-shadow: 0 18px 55px rgba(16, 24, 32, .25); color: var(--ink); }
+.momo-demo-dialog::backdrop { background: rgba(16, 24, 32, .55); }
+.momo-demo-content { position: relative; display: grid; gap: .75rem; padding: 1.5rem; }
+.momo-demo-content h2, .momo-demo-content p { margin: 0; }
+.momo-demo-content h2 { padding-right: 1.5rem; font-size: 1.5rem; }
+.momo-demo-content label { font-size: .9rem; font-weight: 800; }
+.momo-demo-content input { width: 100%; border: 1px solid #cbd5df; border-radius: 4px; padding: .7rem; }
+.momo-demo-content button:disabled { background: #7d8790; cursor: not-allowed; }
+.momo-demo-warning { color: var(--red); font-size: .84rem; }
+.momo-demo-close { position: absolute; top: .65rem; right: .65rem; min-height: 34px; width: 34px; padding: 0; font-size: 1.4rem; }
 .empty-state { border: 1px dashed #b9c7bf; border-radius: 7px; padding: 1.5rem; background: var(--surface); color: var(--muted); text-align: center; }
 .site-footer { border-top: 1px solid var(--line); padding: 1.2rem 20px; color: var(--muted); font-size: .84rem; text-align: center; }
 .whatsapp-contact { position: fixed; z-index: 5; right: 1.25rem; bottom: 1.25rem; display: inline-flex; min-height: 52px; align-items: center; gap: .6rem; border: 0; border-radius: 999px; padding: .75rem 1.1rem; background: #25d366; box-shadow: 0 5px 18px rgba(0, 0, 0, .2); color: #073b1d; font-size: .92rem; font-weight: 800; text-decoration: none; transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease; }
@@ -161,6 +215,12 @@ button.text-button:hover { background: transparent; color: var(--blue); }
     .intro { grid-template-columns: 1fr; gap: 1.25rem; }
     .intro-logo { width: min(100%, 220px); justify-self: start; }
     .auth-grid { grid-template-columns: 1fr; }
+    .profile-details { grid-template-columns: 1fr; gap: .6rem; }
+    .profile-picture-form { align-items: stretch; flex-direction: column; }
+    .profile-picture-form button { width: 100%; }
+    .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dashboard-charts { grid-template-columns: 1fr; }
+    .chart-live-controls { justify-content: flex-start; }
     .job-form-grid { grid-template-columns: 1fr; }
     .section-heading { align-items: start; flex-direction: column; }
     .section-heading > .muted { text-align: left; }
@@ -331,4 +391,59 @@ button.text-button:hover { background: transparent; color: var(--blue); }
     .landing-nav-links a { font-size: .76rem; }
     .nav-login { margin-left: auto; font-size: .82rem; }
     .nav-join { padding: .6rem .7rem; font-size: .78rem; }
+}
+.application-site { min-height: 100vh; background: #f6f8f7; }
+.application-site .topbar { display: none; }
+.application-site main { width: 100%; min-height: 100vh; margin: 0; }
+.dashboard-layout { display: grid; min-height: 100vh; grid-template-columns: 280px minmax(0, 1fr); }
+.dashboard-sidebar { position: sticky; top: 0; display: flex; height: 100vh; min-height: 620px; flex-direction: column; border-right: 1px solid #e6ece9; padding: 28px 18px 16px; background: #fff; }
+.sidebar-brand { display: flex; align-items: center; gap: .75rem; margin: 0 0 42px 12px; color: var(--ink); font-size: 1.15rem; font-weight: 900; line-height: 1.15; text-decoration: none; }
+.sidebar-brand-logo { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border-radius: 50%; background: #101820; }
+.sidebar-brand-logo img { width: 100%; height: 100%; object-fit: cover; }
+.sidebar-label { margin: 0 12px .7rem; color: #98a2aa; font-size: .69rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+.sidebar-workspace { display: flex; min-width: 0; align-items: center; gap: .75rem; margin: 0 0 38px; border: 1px solid #e6ece9; border-radius: 12px; padding: .75rem; background: #f8faf9; }
+.workspace-avatar { position: relative; display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border-radius: 10px; background: #e2f0eb; color: #277e6c; font-weight: 800; }
+.workspace-copy, .sidebar-user-copy { display: grid; min-width: 0; gap: .12rem; }
+.workspace-copy strong, .sidebar-user-copy strong { overflow: hidden; color: #16212a; font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-copy small, .sidebar-user-copy small { overflow: hidden; color: #78838b; font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-chevron { width: 8px; height: 8px; flex: 0 0 8px; margin: -4px 3px 0 auto; transform: rotate(45deg); border-right: 2px solid #98a2aa; border-bottom: 2px solid #98a2aa; }
+.sidebar-section-label { margin-top: 0; }
+.sidebar-links { display: grid; gap: .25rem; margin-bottom: 32px; }
+.sidebar-link { display: flex; min-height: 48px; align-items: center; gap: .8rem; border-radius: 10px; padding: .7rem .85rem; color: #66737b; font-size: .88rem; text-decoration: none; transition: background-color .15s ease, color .15s ease; }
+.sidebar-link svg { width: 20px; height: 20px; flex: 0 0 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.sidebar-link:hover, .sidebar-link.is-active { background: #eaf4f0; color: #147763; }
+.sidebar-link.is-active { font-weight: 800; }
+.sidebar-footer { display: flex; align-items: center; gap: .75rem; margin-top: auto; border-top: 1px solid #e8eeeb; padding: 16px 4px 0; }
+.sidebar-user-avatar { position: relative; display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border-radius: 50%; background: #e8f0f7; color: #54718a; font-size: .8rem; font-weight: 800; }
+.sidebar-avatar-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sidebar-avatar-image[hidden] { display: none; }
+.sidebar-user-copy { flex: 1; }
+.sidebar-footer form { margin: 0; }
+.sidebar-guest-actions { display: grid; gap: .35rem; margin-top: .5rem; }
+.sidebar-logout { display: grid; width: 34px; min-width: 34px; min-height: 34px; height: 34px; place-items: center; border-radius: 7px; padding: 0; background: transparent; color: #829098; }
+.sidebar-logout:hover { background: #edf2ef; color: #344b45; }
+.sidebar-logout svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.dashboard-content { width: min(1120px, 100%); margin: 0 auto; padding: clamp(24px, 4vw, 52px); }
+.application-site .notice { width: min(1120px, calc(100% - 48px)); margin: 20px auto 0; }
+.dashboard-welcome { scroll-margin-top: 24px; }
+.profile-panel, .job-form-panel { scroll-margin-top: 24px; }
+@media (max-width: 800px) {
+    .dashboard-layout { grid-template-columns: 1fr; }
+    .dashboard-sidebar { position: static; height: auto; min-height: 0; padding: 16px 18px 12px; }
+    .sidebar-brand { margin: 0 0 14px; }
+    .sidebar-workspace { margin-bottom: 14px; }
+    .sidebar-section-label { display: none; }
+    .sidebar-links { display: flex; gap: .35rem; margin-bottom: 10px; overflow-x: auto; }
+    .sidebar-link { min-height: 42px; flex: 0 0 auto; padding: .55rem .75rem; }
+    .sidebar-link svg { width: 18px; height: 18px; flex-basis: 18px; }
+    .sidebar-footer { margin-top: 4px; padding-top: 10px; }
+    .dashboard-content { padding: 24px 18px 36px; }
+}
+@media (max-width: 480px) {
+    .dashboard-sidebar { padding-right: 14px; padding-left: 14px; }
+    .sidebar-brand { margin-bottom: 12px; font-size: 1.05rem; }
+    .sidebar-workspace { margin-bottom: 10px; }
+    .sidebar-footer { gap: .55rem; }
+    .dashboard-content { padding: 18px 14px 28px; }
+    .application-site .notice { width: calc(100% - 28px); }
 }

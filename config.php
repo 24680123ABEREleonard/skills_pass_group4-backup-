@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+
 session_set_cookie_params([
     'httponly' => true,
     'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
@@ -65,6 +68,24 @@ function verify_csrf(): void
 function signed_in_user(): ?array
 {
     return isset($_SESSION['user']) && is_array($_SESSION['user']) ? $_SESSION['user'] : null;
+}
+
+function payment_admin_user_id(): ?int
+{
+    $adminUserId = filter_var(
+        trim(getenv('PAYMENT_ADMIN_USER_ID') ?: ''),
+        FILTER_VALIDATE_INT,
+        ['options' => ['min_range' => 1]]
+    );
+    return $adminUserId === false ? null : $adminUserId;
+}
+
+function is_payment_admin(?array $user): bool
+{
+    $adminUserId = payment_admin_user_id();
+    return $user !== null
+        && $adminUserId !== null
+        && (int) ($user['id'] ?? 0) === $adminUserId;
 }
 
 function redirect_to(string $url): never

@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('candidate', 'employer') NOT NULL,
     display_name VARCHAR(150) NOT NULL,
+    profile_picture MEDIUMBLOB NULL,
+    profile_picture_mime VARCHAR(32) NULL,
     failed_login_attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0,
     otp_hash VARCHAR(255) NULL,
     otp_expires_at DATETIME NULL,
@@ -14,6 +16,104 @@ CREATE TABLE IF NOT EXISTS users (
     otp_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+SET @aurora_add_profile_picture = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'profile_picture'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN profile_picture MEDIUMBLOB NULL AFTER display_name',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_profile_picture;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_profile_picture_mime = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'profile_picture_mime'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN profile_picture_mime VARCHAR(32) NULL AFTER profile_picture',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_profile_picture_mime;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_failed_login_attempts = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'failed_login_attempts'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN failed_login_attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER display_name',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_failed_login_attempts;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_otp_hash = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'otp_hash'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN otp_hash VARCHAR(255) NULL AFTER failed_login_attempts',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_otp_hash;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_otp_expires_at = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'otp_expires_at'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN otp_expires_at DATETIME NULL AFTER otp_hash',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_otp_expires_at;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_otp_last_sent_at = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'otp_last_sent_at'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN otp_last_sent_at DATETIME NULL AFTER otp_expires_at',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_otp_last_sent_at;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_otp_attempts = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'users'
+          AND COLUMN_NAME = 'otp_attempts'
+    ) = 0,
+    'ALTER TABLE users ADD COLUMN otp_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER otp_last_sent_at',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_otp_attempts;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
 
 CREATE TABLE IF NOT EXISTS jobs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -48,6 +148,53 @@ CREATE TABLE IF NOT EXISTS applications (
     CONSTRAINT fk_applications_job FOREIGN KEY (job_id) REFERENCES jobs (id) ON DELETE CASCADE,
     CONSTRAINT fk_applications_candidate FOREIGN KEY (candidate_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS application_unlock_payments (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    application_id BIGINT UNSIGNED NOT NULL,
+    employer_id BIGINT UNSIGNED NOT NULL,
+    amount_xaf INT UNSIGNED NOT NULL,
+    transaction_reference VARCHAR(100) NOT NULL UNIQUE,
+    payment_method ENUM('manual', 'mtn_momo') NOT NULL DEFAULT 'manual',
+    payer_phone VARCHAR(20) NULL,
+    status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+    reviewed_by BIGINT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at DATETIME NULL,
+    INDEX idx_unlock_payments_pending (status, created_at),
+    INDEX idx_unlock_payments_application (application_id, id),
+    CONSTRAINT fk_unlock_payments_application FOREIGN KEY (application_id) REFERENCES applications (id) ON DELETE CASCADE,
+    CONSTRAINT fk_unlock_payments_employer FOREIGN KEY (employer_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_unlock_payments_reviewer FOREIGN KEY (reviewed_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+SET @aurora_add_unlock_payment_method = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'application_unlock_payments'
+          AND COLUMN_NAME = 'payment_method'
+    ) = 0,
+    'ALTER TABLE application_unlock_payments ADD COLUMN payment_method ENUM(''manual'', ''mtn_momo'') NOT NULL DEFAULT ''manual'' AFTER transaction_reference',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_unlock_payment_method;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
+
+SET @aurora_add_unlock_payer_phone = IF(
+    (
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'application_unlock_payments'
+          AND COLUMN_NAME = 'payer_phone'
+    ) = 0,
+    'ALTER TABLE application_unlock_payments ADD COLUMN payer_phone VARCHAR(20) NULL AFTER payment_method',
+    'SELECT 1'
+);
+PREPARE aurora_schema_statement FROM @aurora_add_unlock_payer_phone;
+EXECUTE aurora_schema_statement;
+DEALLOCATE PREPARE aurora_schema_statement;
 
 SET @aurora_add_cover_letter = IF(
     (
