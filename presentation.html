@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#191928">
+    <meta name="description" content="A detailed visual walkthrough of the SkillsPassAurora hiring marketplace, its workflows, security, and technology.">
+    <title>SkillsPassAurora | System Overview</title>
+    <link rel="stylesheet" href="presentation.css">
+</head>
+<body>
+    <header class="deck-header">
+        <a class="deck-brand" href="#slide-01" aria-label="SkillsPassAurora presentation, start">
+            <span class="brand-mark" aria-hidden="true">SP</span>
+            <span>SkillsPassAurora <small>System overview</small></span>
+        </a>
+        <nav class="slide-index" aria-label="Presentation slides">
+            <a href="#slide-01" aria-label="Slide 1: Introduction">01</a>
+            <a href="#slide-02" aria-label="Slide 2: Purpose">02</a>
+            <a href="#slide-03" aria-label="Slide 3: Roles">03</a>
+            <a href="#slide-04" aria-label="Slide 4: Job seeker journey">04</a>
+            <a href="#slide-05" aria-label="Slide 5: Employer journey">05</a>
+            <a href="#slide-06" aria-label="Slide 6: Application lifecycle">06</a>
+            <a href="#slide-07" aria-label="Slide 7: Premium limits and checkout">07</a>
+            <a href="#slide-08" aria-label="Slide 8: Dashboard">08</a>
+            <a href="#slide-09" aria-label="Slide 9: Profiles">09</a>
+            <a href="#slide-10" aria-label="Slide 10: Architecture">10</a>
+            <a href="#slide-11" aria-label="Slide 11: Data and scale">11</a>
+            <a href="#slide-12" aria-label="Slide 12: Security">12</a>
+            <a href="#slide-13" aria-label="Slide 13: Setup and demo">13</a>
+            <a href="#slide-14" aria-label="Slide 14: Live chart code">14</a>
+            <a href="#slide-15" aria-label="Slide 15: World map code">15</a>
+            <a href="#slide-16" aria-label="Slide 16: Digital wallet code">16</a>
+        </nav>
+        <a class="skip-link" href="#slide-01">Start presentation</a>
+    </header>
+
+    <main class="presentation" aria-label="SkillsPassAurora system presentation">
+        <section class="slide slide-cover" id="slide-01" aria-labelledby="title-01" tabindex="-1">
+            <div class="cover-copy">
+                <p class="eyebrow">Product overview <span>•</span> October 2026</p>
+                <h1 id="title-01">SkillsPass<span>Aurora</span></h1>
+                <p class="cover-lede">Your skills are not useless.</p>
+                <p class="cover-description">A skills-first marketplace connecting job seekers with employers.</p>
+                <p class="cover-topics">Job seeker and employer journeys <span>·</span> Hiring workflow <span>·</span> Security <span>·</span> Technology</p>
+                <a class="button-link" href="#slide-02">Explore the system <span aria-hidden="true">→</span></a>
+                <p class="cover-caption">A walkthrough of the current PHP + MySQL system</p>
+            </div>
+            <figure class="cover-image screenshot-frame">
+                <img src="presentation-assets/login-screen.png" alt="SkillsPassAurora sign-in page showing the dark navy layout and login form">
+                <figcaption>Live application · sign-in page</figcaption>
+            </figure>
+            <div class="slide-controls">
+                <span class="slide-count">01 / 16</span>
+                <a class="next-link" href="#slide-02">Next <span aria-hidden="true">↓</span></a>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-02" aria-labelledby="title-02" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">01 <span>·</span> Purpose</p>
+                <h2 id="title-02">One marketplace, two sides of hiring</h2>
+                <p class="slide-intro">The platform creates a structured path from discovering a role to selecting a job seeker.</p>
+            </header>
+            <div class="card-grid three">
+                <article class="info-card accent-purple">
+                    <span class="card-icon" aria-hidden="true">01</span>
+                    <h3>For job seekers</h3>
+                    <p>Discover available work, apply with context, and share a public skills profile.</p>
+                </article>
+                <article class="info-card accent-teal">
+                    <span class="card-icon" aria-hidden="true">02</span>
+                    <h3>For employers</h3>
+                    <p>Publish openings, review applications, and hire job seekers.</p>
+                </article>
+                <article class="info-card accent-orange">
+                    <span class="card-icon" aria-hidden="true">03</span>
+                    <h3>Shared foundation</h3>
+                    <p>Accounts, job listings, application status, profiles, and access controls.</p>
+                </article>
+            </div>
+            <div class="highlight-panel">
+                <p class="eyebrow">Product promise</p>
+                <p>Make opportunity discovery and job seeker review clearer: each job has an owner, each application is tied to a job seeker, and hiring updates the job status.</p>
+            </div>
+            <p class="callout-note">Built with server-rendered PHP and MySQL/MariaDB. No JavaScript framework is required.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-01"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">02 / 16</span>
+                <a class="next-link" href="#slide-03">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-03" aria-labelledby="title-03" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">02 <span>·</span> Roles</p>
+                <h2 id="title-03">Two account types share one workflow</h2>
+                <p class="slide-intro">Role permissions are checked on the server, not just hidden in the interface.</p>
+            </header>
+            <div class="role-grid">
+                <article class="role-card candidate-card">
+                    <p class="eyebrow">Job Seeker</p>
+                    <ol>
+                        <li>Create a job seeker account</li>
+                        <li>Browse available jobs</li>
+                        <li>Submit a required cover letter</li>
+                        <li>Add experience or a portfolio link</li>
+                        <li>Track application status</li>
+                        <li>Manage profile and picture</li>
+                    </ol>
+                </article>
+                <article class="role-card employer-card">
+                    <p class="eyebrow">Employer</p>
+                    <ol>
+                        <li>Create an employer account</li>
+                        <li>Post a role and required skills</li>
+                        <li>Review applications for owned jobs</li>
+                        <li>Review job seeker applications</li>
+                        <li>Select a job seeker</li>
+                        <li>Review hiring metrics and status</li>
+                    </ol>
+                </article>
+            </div>
+            <p class="callout-note">Public profiles show a person’s name, account type, member date, and picture. Email and private application data are not displayed publicly.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-02"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">03 / 16</span>
+                <a class="next-link" href="#slide-04">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide slide-with-shot" id="slide-04" aria-labelledby="title-04" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">03 <span>·</span> Job seeker journey</p>
+                <h2 id="title-04">Discover, present, apply</h2>
+                <p class="slide-intro">The application form collects context beyond a résumé-style profile.</p>
+            </header>
+            <div class="screenshot-layout">
+                <figure class="screenshot-frame">
+                    <img src="presentation-assets/landing-screen.png" alt="SkillsPassAurora landing page with job categories and employer callout">
+                    <figcaption>Live application · landing page</figcaption>
+                </figure>
+                <div class="journey-list">
+                    <article class="journey-step accent-purple">
+                        <span>01</span>
+                        <div><h3>Discover</h3><p>Browse available roles from the landing page or Jobs navigation.</p></div>
+                    </article>
+                    <article class="journey-step accent-teal">
+                        <span>02</span>
+                        <div><h3>Apply with context</h3><p>A cover letter is required. Relevant experience and an HTTP/HTTPS portfolio link are optional.</p></div>
+                    </article>
+                    <article class="journey-step accent-orange">
+                        <span>03</span>
+                        <div><h3>Track progress</h3><p>Application status is visible to the job seeker: pending, accepted, or rejected.</p></div>
+                    </article>
+                </div>
+            </div>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-03"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">04 / 16</span>
+                <a class="next-link" href="#slide-05">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide slide-with-shot" id="slide-05" aria-labelledby="title-05" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">04 <span>·</span> Employer workflow</p>
+                <h2 id="title-05">Publish roles and manage hiring</h2>
+                <p class="slide-intro">Employer metrics and charts are scoped to the signed-in employer.</p>
+            </header>
+            <div class="employer-layout">
+                <figure class="screenshot-frame signup-shot">
+                    <img src="presentation-assets/signup-screen.png" alt="SkillsPassAurora account creation screen showing the Job Seeker and Employer choices">
+                    <figcaption>Live application · account role selection</figcaption>
+                </figure>
+                <div class="dashboard-preview" aria-label="Illustrative employer dashboard, not a live screenshot">
+                    <div class="preview-heading"><span>Employer dashboard</span><span class="demo-label">Illustration</span></div>
+                    <div class="metric-row">
+                        <div><small>Total jobs</small><strong>12</strong></div>
+                        <div><small>Applications</small><strong>48</strong></div>
+                        <div><small>Awaiting review</small><strong>09</strong></div>
+                        <div><small>Jobs filled</small><strong>03</strong></div>
+                    </div>
+                    <div class="preview-chart-grid">
+                        <div class="preview-chart">
+                            <h3>Applications over 7 days</h3>
+                            <svg viewBox="0 0 360 142" role="img" aria-label="Illustrative line chart of seven days of application activity">
+                                <path class="grid-line" d="M32 20H350M32 55H350M32 90H350M32 125H350"></path>
+                                <path class="chart-area" d="M38 107 L89 91 L139 102 L190 57 L241 73 L292 35 L344 46 L344 125 L38 125 Z"></path>
+                                <path class="chart-line" d="M38 107 L89 91 L139 102 L190 57 L241 73 L292 35 L344 46"></path>
+                                <circle cx="38" cy="107" r="4"></circle><circle cx="89" cy="91" r="4"></circle>
+                                <circle cx="139" cy="102" r="4"></circle><circle cx="190" cy="57" r="4"></circle>
+                                <circle cx="241" cy="73" r="4"></circle><circle cx="292" cy="35" r="4"></circle>
+                                <circle cx="344" cy="46" r="4"></circle>
+                            </svg>
+                        </div>
+                        <div class="preview-chart status-preview">
+                            <h3>Application status</h3>
+                            <div class="mini-bar"><span>Pending</span><i><b class="bar-orange"></b></i></div>
+                            <div class="mini-bar"><span>Accepted</span><i><b class="bar-teal"></b></i></div>
+                            <div class="mini-bar"><span>Rejected</span><i><b class="bar-pink"></b></i></div>
+                        </div>
+                    </div>
+                    <p class="illustration-note">Chart is an illustration, not a live dashboard capture or current account data.</p>
+                </div>
+            </div>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-04"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">05 / 16</span>
+                <a class="next-link" href="#slide-06">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-06" aria-labelledby="title-06" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">05 <span>·</span> Application lifecycle</p>
+                <h2 id="title-06">From job post to hire</h2>
+                <p class="slide-intro">An explicit state transition connects jobs, job seekers, and employer decisions.</p>
+            </header>
+            <ol class="process-flow">
+                <li><span>01</span><strong>Employer posts</strong><small>Job starts Available</small></li>
+                <li><span>02</span><strong>Job seeker applies</strong><small>One application per job</small></li>
+                <li><span>03</span><strong>Employer reviews</strong><small>Private data access is controlled</small></li>
+                <li><span>04</span><strong>Job seeker selected</strong><small>Job becomes Taken</small></li>
+            </ol>
+            <div class="card-grid two">
+                <article class="info-card accent-teal">
+                    <h3>Application record</h3>
+                    <p>A required cover letter plus optional experience and portfolio URL. A unique job and job seeker pairing prevents duplicate applications.</p>
+                </article>
+                <article class="info-card accent-purple">
+                    <h3>Hiring outcome</h3>
+                    <p>Selecting an eligible applicant marks the job Taken and rejects other pending applications for that job.</p>
+                </article>
+            </div>
+            <p class="callout-note">Employer actions are checked against the signed-in employer and that employer’s own job records.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-05"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">06 / 16</span>
+                <a class="next-link" href="#slide-07">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-07" aria-labelledby="title-07" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">06 <span>·</span> Premium access limits</p>
+                <h2 id="title-07">Free plans are capped, premium expands them</h2>
+                <p class="slide-intro">The platform controls the number of jobs employers can post and the number job seekers can browse each month.</p>
+            </header>
+            <div class="card-grid three">
+                <article class="info-card accent-purple">
+                    <span class="card-icon" aria-hidden="true">01</span>
+                    <h3>Employer cap</h3>
+                    <p>Free employers can keep up to 8 active job posts at a time. Additional postings require premium access.</p>
+                </article>
+                <article class="info-card accent-teal">
+                    <span class="card-icon" aria-hidden="true">02</span>
+                    <h3>Job seeker cap</h3>
+                    <p>Free job seekers see no more than 8 distinct job listings per month across the jobs page and dashboard. Server-side tracking prevents repeat visits or direct application requests from bypassing the cap.</p>
+                </article>
+                <article class="info-card accent-orange">
+                    <span class="card-icon" aria-hidden="true">03</span>
+                    <h3>Premium access</h3>
+                    <p>Users with an active premium entitlement can bypass the free cap and continue browsing or posting more opportunities.</p>
+                </article>
+            </div>
+            <div class="payment-details">
+                <div>
+                    <h3>Business enforcement</h3>
+                    <ul>
+                        <li>Server-side cap checks before posting or viewing</li>
+                        <li>Premium expiration based on the user record</li>
+                        <li>Monthly job-view tracking by user and job</li>
+                        <li>Clear user-facing notices when the free allowance is reached</li>
+                    </ul>
+                </div>
+                <aside>
+                    <strong>Premium checkout</strong>
+                    <p>MTN MoMo sandbox top-ups add 500 XAF to the in-app wallet after provider confirmation. Users spend 500 XAF from that balance for 50 Premium days. Wallet funds cannot be withdrawn, and applicant details are never payment-gated.</p>
+                </aside>
+            </div>
+            <p class="callout-note warning">Premium activates only after the provider confirms the payment. Sandbox transactions are simulated and do not charge real money.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-06"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">07 / 16</span>
+                <a class="next-link" href="#slide-08">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-08" aria-labelledby="title-08" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">07 <span>·</span> Employer dashboard</p>
+                <h2 id="title-08">A quick pulse on hiring activity</h2>
+                <p class="slide-intro">Dashboard data refreshes every 30 seconds; employers can also refresh manually.</p>
+            </header>
+            <div class="metric-row large-metrics">
+                <div><small>Total jobs</small><strong>Jobs posted</strong></div>
+                <div><small>Total applications</small><strong>Received</strong></div>
+                <div><small>Awaiting review</small><strong>Pending</strong></div>
+                <div><small>Jobs filled</small><strong>Hired</strong></div>
+            </div>
+            <div class="analytics-panels">
+                <article class="preview-chart">
+                    <h3>Applications over the last seven days</h3>
+                    <svg class="analytics-line-chart" viewBox="0 0 640 205" role="img" aria-label="Illustrative line chart showing application trends across a week">
+                        <path class="grid-line" d="M48 22H620M48 76H620M48 130H620M48 184H620"></path>
+                        <path class="chart-area" d="M52 155 L146 132 L241 145 L336 80 L431 106 L526 47 L616 61 L616 184 L52 184 Z"></path>
+                        <path class="chart-line" d="M52 155 L146 132 L241 145 L336 80 L431 106 L526 47 L616 61"></path>
+                        <circle cx="52" cy="155" r="5"></circle><circle cx="146" cy="132" r="5"></circle>
+                        <circle cx="241" cy="145" r="5"></circle><circle cx="336" cy="80" r="5"></circle>
+                        <circle cx="431" cy="106" r="5"></circle><circle cx="526" cy="47" r="5"></circle>
+                        <circle cx="616" cy="61" r="5"></circle>
+                        <text x="52" y="201">Mon</text><text x="146" y="201">Tue</text>
+                        <text x="241" y="201">Wed</text><text x="336" y="201">Thu</text>
+                        <text x="431" y="201">Fri</text><text x="526" y="201">Sat</text>
+                        <text x="616" y="201">Sun</text>
+                    </svg>
+                    <p>Daily applications · last 7 days</p>
+                </article>
+                <article class="preview-chart">
+                    <h3>Applications by review status</h3>
+                    <div class="mini-bar"><span>Pending</span><i><b class="bar-orange"></b></i></div>
+                    <div class="mini-bar"><span>Accepted</span><i><b class="bar-teal"></b></i></div>
+                    <div class="mini-bar"><span>Rejected</span><i><b class="bar-pink"></b></i></div>
+                    <p>Counts are calculated from each employer’s own applications.</p>
+                </article>
+            </div>
+            <p class="callout-note">The dashboard charts use live employer-specific data. This slide shows a visual preview; code screenshots are on slide 14.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-07"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">08 / 16</span>
+                <a class="next-link" href="#slide-09">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-09" aria-labelledby="title-09" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">08 <span>·</span> Profiles &amp; privacy</p>
+                <h2 id="title-09">Shareable profiles, limited public data</h2>
+                <p class="slide-intro">One profile supports job seeker discoverability without exposing email by default.</p>
+            </header>
+            <div class="card-grid three">
+                <article class="info-card accent-teal">
+                    <h3>Public profile</h3>
+                    <p>Display name, account type, member date, and profile picture.</p>
+                </article>
+                <article class="info-card accent-purple">
+                    <h3>Private by default</h3>
+                    <p>Email and private application data are not displayed on public profiles.</p>
+                </article>
+                <article class="info-card accent-orange">
+                    <h3>Picture validation</h3>
+                    <p>JPEG, PNG, or WebP; maximum 2 MB; image type, size, and dimensions are checked.</p>
+                </article>
+            </div>
+            <div class="card-grid two privacy-panels">
+                <article class="info-card">
+                    <h3>Applicant access</h3>
+                    <p>Applicant details belong to applications for an employer’s own jobs. No applicant-unlock payment is required.</p>
+                </article>
+                <article class="info-card">
+                    <h3>Application context</h3>
+                    <p>Applications include a required cover letter, optional experience, and an optional HTTP/HTTPS portfolio URL.</p>
+                </article>
+            </div>
+            <p class="callout-note">Public profile pages expose a limited view. Private actions still require server-side authorization.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-08"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">09 / 16</span>
+                <a class="next-link" href="#slide-10">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-10" aria-labelledby="title-10" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">09 <span>·</span> System architecture</p>
+                <h2 id="title-10">A compact server-rendered stack</h2>
+                <p class="slide-intro">Each request passes through PHP before data is read or changed in the relational database.</p>
+            </header>
+            <div class="architecture-flow">
+                <article><span>01</span><h3>Browser</h3><p>Job seeker or employer</p></article>
+                <span class="flow-arrow" aria-hidden="true">→</span>
+                <article><span>02</span><h3>PHP 8.1+</h3><p>index.php + PDO</p></article>
+                <span class="flow-arrow" aria-hidden="true">→</span>
+                <article><span>03</span><h3>MySQL / MariaDB</h3><p>InnoDB tables</p></article>
+                <span class="flow-arrow" aria-hidden="true">↔</span>
+                <article><span>04</span><h3>External services</h3><p>SMTP + MTN MoMo sandbox wallet top-ups</p></article>
+            </div>
+            <div class="card-grid three architecture-cards">
+                <article class="info-card accent-purple"><h3>Server responsibilities</h3><p>Authentication, role checks, validation, CSRF, workflows, and dashboard JSON.</p></article>
+                <article class="info-card accent-teal"><h3>Database responsibilities</h3><p>Relationships, unique constraints, indexes, cascading cleanup, and durable state.</p></article>
+                <article class="info-card accent-orange"><h3>Integrations</h3><p>SMTP supports sign-in codes; MTN MoMo Collection API handles sandbox wallet top-ups and payment-status checks.</p></article>
+            </div>
+            <p class="callout-note">Dashboard charts are browser-rendered SVG using employer-scoped JSON data. No frontend framework is required.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-09"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">10 / 16</span>
+                <a class="next-link" href="#slide-11">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-11" aria-labelledby="title-11" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">10 <span>·</span> Data &amp; scale</p>
+                <h2 id="title-11">A large user ID range, with real-world limits</h2>
+                <p class="slide-intro">A 64-bit identifier is a capacity foundation—not a promise of unlimited storage or throughput.</p>
+            </header>
+            <div class="card-grid three">
+                <article class="info-card accent-purple"><h3>Users</h3><p>BIGINT UNSIGNED primary key; unique email; role index; password and OTP hashes; optional profile image.</p></article>
+                <article class="info-card accent-teal"><h3>Jobs + applications</h3><p>Employer and job seeker account links; unique job/account pair; status and lookup indexes.</p></article>
+                <article class="info-card accent-orange"><h3>Premium payments</h3><p>Premium expiry, provider references, idempotent payment status, and monthly job-view tracking.</p></article>
+            </div>
+            <div class="scale-details">
+                <div><h3>What BIGINT UNSIGNED means</h3><p>The ID range is 0 to <strong>18,446,744,073,709,551,615</strong>. One million users is well within this range.</p></div>
+                <aside><strong>Actual capacity depends on:</strong><p>Available disk, profile-picture storage, indexes, backup and recovery design, query load, and server resources. Scale testing and operations planning are still needed.</p></aside>
+            </div>
+            <p class="callout-note">Use <code>schema.sql</code> for a fresh installation or to add supported tables and columns to an existing database without replacing its records.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-10"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">11 / 16</span>
+                <a class="next-link" href="#slide-12">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-12" aria-labelledby="title-12" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">11 <span>·</span> Security</p>
+                <h2 id="title-12">Layered protection across the workflow</h2>
+                <p class="slide-intro">Security checks apply to sign-in, data changes, access decisions, uploads, and integrations.</p>
+            </header>
+            <div class="card-grid three security-grid">
+                <article class="info-card accent-purple"><h3>Password protection</h3><p>Passwords are hashed. Incorrect attempts are counted and capped.</p></article>
+                <article class="info-card accent-teal"><h3>Step-up OTP</h3><p>After 10 failed attempts, email OTP is required. Codes are hashed, expire in 10 minutes, allow five attempts, and have a one-minute resend interval.</p></article>
+                <article class="info-card accent-orange"><h3>Safer requests</h3><p>PDO prepared statements, session regeneration, and CSRF tokens on state-changing forms.</p></article>
+                <article class="info-card accent-teal"><h3>Server authorization</h3><p>Employer ownership checks guard posting, reviewing, and hiring actions.</p></article>
+                <article class="info-card accent-purple"><h3>Output &amp; uploads</h3><p>Dynamic text is escaped; uploaded images are checked for MIME type, size, and dimensions.</p></article>
+                <article class="info-card accent-pink"><h3>Secrets &amp; payments</h3><p>SMTP and MTN sandbox credentials belong in server environment settings, never committed code.</p></article>
+            </div>
+            <p class="callout-note">Operationally: enable HTTPS, keep PHP and MySQL patched, restrict database privileges, back up data, and test recovery.</p>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-11"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">12 / 16</span>
+                <a class="next-link" href="#slide-13">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide" id="slide-13" aria-labelledby="title-13" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">12 <span>·</span> Setup &amp; walkthrough</p>
+                <h2 id="title-13">Launch and demonstrate the system</h2>
+                <p class="slide-intro">A guided demo can explain the product even before a large dataset is loaded.</p>
+            </header>
+            <div class="card-grid two setup-grid">
+                <article class="info-card accent-teal">
+                    <h3>Local setup</h3>
+                    <ol>
+                        <li>Start Apache and MySQL in XAMPP</li>
+                        <li>Import the single <code>schema.sql</code> file for a fresh install or upgrade</li>
+                        <li>Set <code>DB_HOST</code>, <code>DB_NAME</code>, <code>DB_USER</code>, and <code>DB_PASS</code></li>
+                        <li>Install Composer dependencies</li>
+                        <li>Configure SMTP for OTP email</li>
+                        <li>Configure MTN MoMo sandbox credentials on the server</li>
+                    </ol>
+                </article>
+                <article class="info-card accent-purple">
+                    <h3>Demo flow</h3>
+                    <ol>
+                        <li>Show the landing page and account roles</li>
+                        <li>Register an employer and post an available job</li>
+                        <li>Register a job seeker, browse, and apply</li>
+                        <li>Review the application as the employer</li>
+                        <li>Start a sandbox Premium checkout and verify provider status</li>
+                        <li>Select a job seeker and observe the Taken status</li>
+                    </ol>
+                </article>
+            </div>
+            <div class="readiness-note"><strong>Readiness note</strong><p>Slides 14–16 include screenshots of the source code for the live charts, job-location map, and digital wallet. Populate the database with test accounts and jobs before a live demo.</p></div>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-12"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">13 / 16</span>
+                <a class="next-link" href="#slide-14">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide implementation-slide" id="slide-14" aria-labelledby="title-14" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">13 <span>·</span> Implementation · live charts</p>
+                <h2 id="title-14">Where the live dashboard charts are implemented</h2>
+                <p class="slide-intro">Code screenshots from the employer-specific live trend and application-status charts.</p>
+            </header>
+            <figure class="screenshot-frame implementation-shot">
+                <img src="presentation-assets/code-slide-14.png" alt="Screenshot of index.php showing the renderTrendChart and renderStatusChart source code, including real application data and SVG chart rendering">
+                <figcaption>Source: index.php · renderTrendChart() and renderStatusChart()</figcaption>
+            </figure>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-13"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">14 / 16</span>
+                <a class="next-link" href="#slide-15">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide implementation-slide" id="slide-15" aria-labelledby="title-15" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">14 <span>·</span> Implementation · world map</p>
+                <h2 id="title-15">Where the live employer map is implemented</h2>
+                <p class="slide-intro">Code screenshots showing employer-owned jobs grouped into mapped locations and rendered as selectable markers.</p>
+            </header>
+            <figure class="screenshot-frame implementation-shot">
+                <img src="presentation-assets/code-slide-15.png" alt="Screenshot of index.php showing employer job location grouping, map coordinate projection, location markers, and connectors">
+                <figcaption>Source: index.php · load_employer_dashboard_data() and renderJobMap()</figcaption>
+            </figure>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-14"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">15 / 16</span>
+                <a class="next-link" href="#slide-16">Next <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
+
+        <section class="slide implementation-slide" id="slide-16" aria-labelledby="title-16" tabindex="-1">
+            <header class="slide-heading">
+                <p class="eyebrow">15 <span>·</span> Implementation · digital wallet</p>
+                <h2 id="title-16">Where the wallet and MoMo checkout are implemented</h2>
+                <p class="slide-intro">Code screenshots of the MTN MoMo Collection request and the wallet Premium debit and transaction ledger.</p>
+            </header>
+            <figure class="screenshot-frame implementation-shot">
+                <img src="presentation-assets/code-slide-16.png" alt="Screenshot of momo.php and index.php showing the MTN MoMo collection request and atomic wallet debit for Premium">
+                <figcaption>Sources: momo.php · MTN Collection API; index.php · purchase_premium_with_wallet()</figcaption>
+            </figure>
+            <nav class="slide-controls" aria-label="Slide navigation">
+                <a class="previous-link" href="#slide-15"><span aria-hidden="true">↑</span> Previous</a>
+                <span class="slide-count">16 / 16</span>
+                <a class="next-link" href="#slide-01">Back to start <span aria-hidden="true">↑</span></a>
+            </nav>
+        </section>
+    </main>
+</body>
+</html>

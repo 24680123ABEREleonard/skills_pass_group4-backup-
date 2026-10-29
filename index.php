@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/config.php';
+require_once __DIR__ . '/momo.php';
 require_once __DIR__ . '/vendor/autoload.php';
 
 use PHPMailer\PHPMailer\Exception as MailerException;
@@ -18,28 +19,18 @@ $signupRole = isset($_GET['role']) && in_array($_GET['role'], ['candidate', 'emp
 $pendingEmail = $_SESSION['pending_login_email'] ?? '';
 $jobs = [];
 $jobsLoaded = false;
+$candidateJobViewCount = 0;
+$candidateJobViewLimit = 8;
 $applicationsByJob = [];
 $candidateApplications = [];
 $employerDashboardData = null;
 $profileData = null;
 $publicProfileData = null;
-$pendingUnlockPayments = [];
-$unlockPriceXaf = 300;
-$paymentReceiver = trim(getenv('MTN_MOMO_RECEIVER') ?: '682268179');
-$paymentReceiverName = trim(getenv('MTN_MOMO_RECEIVER_NAME') ?: 'VIVIAN MANYI TANYI');
-$momoBaseUrl = rtrim(trim(getenv('MTN_MOMO_BASE_URL') ?: ''), '/');
-$momoApiUser = trim(getenv('MTN_MOMO_API_USER') ?: '');
-$momoApiKey = trim(getenv('MTN_MOMO_API_KEY') ?: '');
-$momoSubscriptionKey = trim(getenv('MTN_MOMO_SUBSCRIPTION_KEY') ?: '');
-$momoTargetEnvironment = trim(getenv('MTN_MOMO_TARGET_ENVIRONMENT') ?: '');
-$momoConfigured = $momoBaseUrl !== ''
-    && filter_var($momoBaseUrl, FILTER_VALIDATE_URL) !== false
-    && parse_url($momoBaseUrl, PHP_URL_SCHEME) === 'https'
-    && $momoApiUser !== ''
-    && $momoApiKey !== ''
-    && $momoSubscriptionKey !== ''
-    && $momoTargetEnvironment !== '';
-
+$latestPremiumPayments = [];
+$walletBalance = 0;
+$latestWalletTopups = [];
+$latestWalletTransactions = [];
+$walletStorageReady = true;
 function send_login_code(string $email, string $code): bool
 {
     $username = getenv('SMTP_USER') ?: '';
@@ -81,96 +72,16 @@ function normalize_cameroon_phone(string $phone): ?string
         return null;
     }
 
-    $digits = ltrim($digits, '+');
+    if (str_starts_with($digits, '+')) {
+        $digits = substr($digits, 1);
+    }
+    if (str_contains($digits, '+')) {
+        return null;
+    }
     if (preg_match('/\A6\d{8}\z/', $digits)) {
         return '237' . $digits;
     }
     return preg_match('/\A2376\d{8}\z/', $digits) ? $digits : null;
-}
-
-function momo_api_call(string $method, string $path, array $config, ?array $payload = null, ?string $token = null, ?string $referenceId = null): array
-{
-    $headers = [
-        'Accept: application/json',
-        'Ocp-Apim-Subscription-Key: ' . $config['subscription_key'],
-        'X-Target-Environment: ' . $config['target_environment'],
-    ];
-    if ($token !== null) {
-        $headers[] = 'Authorization: Bearer ' . $token;
-    } else {
-        $headers[] = 'Authorization: Basic ' . base64_encode($config['api_user'] . ':' . $config['api_key']);
-        $headers[] = 'Cache-Control: no-cache';
-    }
-    if ($referenceId !== null) {
-        $headers[] = 'X-Reference-Id: ' . $referenceId;
-    }
-    if ($payload !== null) {
-        $headers[] = 'Content-Type: application/json';
-    }
-
-    $curl = curl_init($config['base_url'] . $path);
-    if ($curl === false) {
-        throw new RuntimeException('MTN Mobile Money could not be reached. Please try again later.');
-    }
-    $options = [
-        CURLOPT_CUSTOMREQUEST => $method,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_TIMEOUT => 20,
-        CURLOPT_SSL_VERIFYPEER => true,
-        CURLOPT_SSL_VERIFYHOST => 2,
-    ];
-    if ($payload !== null) {
-        $json = json_encode($payload, JSON_THROW_ON_ERROR);
-        $options[CURLOPT_POSTFIELDS] = $json;
-    }
-    curl_setopt_array($curl, $options);
-    $body = curl_exec($curl);
-    $curlError = curl_error($curl);
-    $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-    curl_close($curl);
-
-    if (!is_string($body)) {
-        error_log('SkillsPassAurora MTN MoMo API request failed: ' . $curlError);
-        throw new RuntimeException('MTN Mobile Money is temporarily unreachable. The payment may still be processing; check its status before retrying.');
-    }
-
-    $decoded = [];
-    if ($body !== '') {
-        try {
-            $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            error_log('SkillsPassAurora MTN MoMo API returned invalid JSON (HTTP ' . $status . ').');
-            throw new RuntimeException('MTN Mobile Money returned an invalid response. Please try again later.');
-        }
-        if (!is_array($decoded)) {
-            throw new RuntimeException('MTN Mobile Money returned an invalid response. Please try again later.');
-        }
-    }
-
-    return ['status' => $status, 'data' => $decoded];
-}
-
-function momo_access_token(array $config): string
-{
-    $response = momo_api_call('POST', '/collection/token/', $config);
-    $token = $response['data']['access_token'] ?? null;
-    if ($response['status'] !== 200 || !is_string($token) || $token === '') {
-        error_log('SkillsPassAurora MTN MoMo token request failed (HTTP ' . $response['status'] . ').');
-        throw new RuntimeException('MTN Mobile Money is not ready to accept payments. Check the Collection API credentials and try again.');
-    }
-    return $token;
-}
-
-function new_payment_reference(): string
-{
-    $bytes = random_bytes(16);
-    $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
-    $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
-    $hex = bin2hex($bytes);
-    return substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' . substr($hex, 12, 4)
-        . '-' . substr($hex, 16, 4) . '-' . substr($hex, 20);
 }
 
 function start_user_session(array $user): void
@@ -181,8 +92,365 @@ function start_user_session(array $user): void
         'email' => (string) $user['email'],
         'role' => (string) $user['role'],
         'display_name' => (string) $user['display_name'],
+        'is_premium' => (int) ($user['is_premium'] ?? 0),
+        'premium_expires_at' => isset($user['premium_expires_at']) && $user['premium_expires_at'] !== null && $user['premium_expires_at'] !== '' ? (string) $user['premium_expires_at'] : null,
     ];
     unset($_SESSION['pending_login_user_id'], $_SESSION['pending_login_email']);
+}
+
+function user_has_active_premium(?array $user): bool
+{
+    if ($user === null) {
+        return false;
+    }
+
+    $premium = (int) ($user['is_premium'] ?? 0);
+    if ($premium !== 1) {
+        return false;
+    }
+
+    $expiresAt = $user['premium_expires_at'] ?? null;
+    if (!is_string($expiresAt) || $expiresAt === '') {
+        return true;
+    }
+
+    $timestamp = strtotime($expiresAt . ' UTC');
+    return $timestamp !== false && $timestamp > time();
+}
+
+function current_view_month(): string
+{
+    return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m');
+}
+
+function load_free_candidate_jobs(PDO $pdo, int $candidateId, int $monthlyLimit): array
+{
+    $monthlyLimit = max(1, min(8, $monthlyLimit));
+    $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare('SELECT id FROM users WHERE id = :id AND role = :role FOR UPDATE');
+        $statement->execute(['id' => $candidateId, 'role' => 'candidate']);
+        if ($statement->fetchColumn() === false) {
+            throw new RuntimeException('Your job seeker account could not be found. Sign out and sign in again.');
+        }
+
+        $viewMonth = current_view_month();
+        $statement = $pdo->prepare(
+            'SELECT job_id
+             FROM job_views
+             WHERE user_id = :user_id AND view_month = :view_month
+             ORDER BY viewed_at, job_id
+             LIMIT ' . $monthlyLimit
+        );
+        $statement->execute(['user_id' => $candidateId, 'view_month' => $viewMonth]);
+        $jobIds = array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM job_views
+             WHERE user_id = :user_id AND view_month = :view_month'
+        );
+        $statement->execute(['user_id' => $candidateId, 'view_month' => $viewMonth]);
+        $viewCount = (int) $statement->fetchColumn();
+        $remainingViews = max(0, $monthlyLimit - $viewCount);
+
+        if ($remainingViews > 0) {
+            $statement = $pdo->prepare(
+                'SELECT jobs.id
+                 FROM jobs
+                 WHERE NOT EXISTS (
+                     SELECT 1
+                     FROM job_views
+                     WHERE job_views.user_id = :user_id
+                       AND job_views.view_month = :view_month
+                       AND job_views.job_id = jobs.id
+                 )
+                 ORDER BY (jobs.status = :available_status) DESC, jobs.created_at DESC
+                 LIMIT ' . $remainingViews
+            );
+            $statement->execute([
+                'user_id' => $candidateId,
+                'view_month' => $viewMonth,
+                'available_status' => 'available',
+            ]);
+            $newJobIds = array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+            $insertView = $pdo->prepare(
+                'INSERT INTO job_views (user_id, job_id, view_month, viewed_at)
+                 VALUES (:user_id, :job_id, :view_month, UTC_TIMESTAMP())'
+            );
+            foreach ($newJobIds as $jobId) {
+                $insertView->execute([
+                    'user_id' => $candidateId,
+                    'job_id' => $jobId,
+                    'view_month' => $viewMonth,
+                ]);
+            }
+            $jobIds = array_merge($jobIds, $newJobIds);
+            $viewCount += count($newJobIds);
+        }
+
+        if ($jobIds === []) {
+            $pdo->commit();
+            return ['jobs' => [], 'view_count' => min($viewCount, $monthlyLimit)];
+        }
+
+        $jobPlaceholders = implode(', ', array_fill(0, count($jobIds), '?'));
+        $statement = $pdo->prepare(
+            "SELECT jobs.*, users.display_name AS employer_name,
+                    (SELECT COUNT(*) FROM applications WHERE applications.job_id = jobs.id) AS application_count
+             FROM jobs
+             INNER JOIN users ON users.id = jobs.employer_id
+             WHERE jobs.id IN ({$jobPlaceholders})
+             ORDER BY (jobs.status = 'available') DESC, jobs.created_at DESC"
+        );
+        $statement->execute($jobIds);
+        $jobs = $statement->fetchAll();
+        $pdo->commit();
+
+        return ['jobs' => $jobs, 'view_count' => min($viewCount, $monthlyLimit)];
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+}
+
+function activate_premium_payment(PDO $pdo, int $userId, int $paymentId): ?string
+{
+    $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare(
+            'SELECT status, premium_days FROM premium_payments
+             WHERE id = :id AND user_id = :user_id
+             FOR UPDATE'
+        );
+        $statement->execute(['id' => $paymentId, 'user_id' => $userId]);
+        $payment = $statement->fetch();
+        if (!$payment) {
+            throw new RuntimeException('This payment could not be found for your account.');
+        }
+        if ($payment['status'] === 'successful') {
+            $pdo->commit();
+            return null;
+        }
+        if ($payment['status'] !== 'pending') {
+            throw new RuntimeException('This payment is no longer pending.');
+        }
+        if ((int) $payment['premium_days'] < 1) {
+            throw new RuntimeException('This payment has an invalid Premium term.');
+        }
+
+        $statement = $pdo->prepare(
+            'SELECT is_premium, premium_expires_at
+             FROM users
+             WHERE id = :id
+             FOR UPDATE'
+        );
+        $statement->execute(['id' => $userId]);
+        $userPremium = $statement->fetch();
+        if (!$userPremium) {
+            throw new RuntimeException('Your account could not be found. Sign out and sign in again.');
+        }
+
+        $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $expiryBase = $now;
+        if ((int) $userPremium['is_premium'] === 1 && $userPremium['premium_expires_at'] !== null) {
+            $currentExpiry = new DateTimeImmutable((string) $userPremium['premium_expires_at'], new DateTimeZone('UTC'));
+            if ($currentExpiry > $now) {
+                $expiryBase = $currentExpiry;
+            }
+        }
+        $premiumDays = (int) $payment['premium_days'];
+        $newExpiry = $expiryBase->modify('+' . $premiumDays . ' days')->format('Y-m-d H:i:s');
+
+        $statement = $pdo->prepare(
+            'UPDATE users
+             SET is_premium = 1, premium_expires_at = :premium_expires_at
+             WHERE id = :id'
+        );
+        $statement->execute(['premium_expires_at' => $newExpiry, 'id' => $userId]);
+        $statement = $pdo->prepare(
+            "UPDATE premium_payments
+             SET status = 'successful', completed_at = UTC_TIMESTAMP()
+             WHERE id = :id AND user_id = :user_id AND status = 'pending'"
+        );
+        $statement->execute(['id' => $paymentId, 'user_id' => $userId]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('The payment confirmation was already processed or is no longer pending.');
+        }
+        $pdo->commit();
+
+        if (isset($_SESSION['user']) && (int) $_SESSION['user']['id'] === $userId) {
+            $_SESSION['user']['is_premium'] = 1;
+            $_SESSION['user']['premium_expires_at'] = $newExpiry;
+        }
+
+        return $newExpiry;
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+}
+
+function credit_wallet_topup(PDO $pdo, int $userId, int $topupId): int
+{
+    $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare('SELECT id FROM users WHERE id = :id FOR UPDATE');
+        $statement->execute(['id' => $userId]);
+        if ($statement->fetchColumn() === false) {
+            throw new RuntimeException('Your account could not be found. Sign out and sign in again.');
+        }
+
+        $statement = $pdo->prepare(
+            'SELECT amount, currency, status
+             FROM wallet_topups
+             WHERE id = :id AND user_id = :user_id
+             FOR UPDATE'
+        );
+        $statement->execute(['id' => $topupId, 'user_id' => $userId]);
+        $topup = $statement->fetch();
+        if (!$topup) {
+            throw new RuntimeException('This wallet top-up could not be found for your account.');
+        }
+        if ($topup['status'] === 'successful') {
+            $statement = $pdo->prepare('SELECT balance_xaf FROM wallets WHERE user_id = :user_id');
+            $statement->execute(['user_id' => $userId]);
+            $balance = $statement->fetchColumn();
+            if ($balance === false) {
+                throw new RuntimeException('The confirmed wallet top-up has no wallet account. Contact support.');
+            }
+            $pdo->commit();
+            return (int) $balance;
+        }
+        if ($topup['status'] !== 'pending'
+            || (int) $topup['amount'] !== PREMIUM_CHECKOUT_AMOUNT_XAF
+            || $topup['currency'] !== 'XAF') {
+            throw new RuntimeException('This wallet top-up is not valid for crediting.');
+        }
+
+        $pdo->prepare('INSERT IGNORE INTO wallets (user_id) VALUES (:user_id)')
+            ->execute(['user_id' => $userId]);
+        $statement = $pdo->prepare('SELECT balance_xaf FROM wallets WHERE user_id = :user_id FOR UPDATE');
+        $statement->execute(['user_id' => $userId]);
+        $balance = (int) $statement->fetchColumn();
+        $newBalance = $balance + PREMIUM_CHECKOUT_AMOUNT_XAF;
+
+        $statement = $pdo->prepare(
+            "UPDATE wallet_topups
+             SET status = 'successful', completed_at = UTC_TIMESTAMP()
+             WHERE id = :id AND user_id = :user_id AND status = 'pending'"
+        );
+        $statement->execute(['id' => $topupId, 'user_id' => $userId]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('This wallet top-up was already processed or is no longer pending.');
+        }
+
+        $statement = $pdo->prepare(
+            'UPDATE wallets SET balance_xaf = :balance WHERE user_id = :user_id'
+        );
+        $statement->execute(['balance' => $newBalance, 'user_id' => $userId]);
+        $statement = $pdo->prepare(
+            "INSERT INTO wallet_transactions
+             (user_id, transaction_type, amount_xaf, balance_after_xaf, event_key)
+             VALUES (:user_id, 'top_up', :amount, :balance, :event_key)"
+        );
+        $statement->execute([
+            'user_id' => $userId,
+            'amount' => PREMIUM_CHECKOUT_AMOUNT_XAF,
+            'balance' => $newBalance,
+            'event_key' => 'topup:' . $topupId,
+        ]);
+        $pdo->commit();
+        return $newBalance;
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+}
+
+function purchase_premium_with_wallet(PDO $pdo, int $userId): string
+{
+    $pdo->beginTransaction();
+    try {
+        $statement = $pdo->prepare(
+            'SELECT is_premium, premium_expires_at FROM users WHERE id = :id FOR UPDATE'
+        );
+        $statement->execute(['id' => $userId]);
+        $account = $statement->fetch();
+        if (!$account) {
+            throw new RuntimeException('Your account could not be found. Sign out and sign in again.');
+        }
+        if (user_has_active_premium($account)) {
+            throw new RuntimeException('Your Premium access is already active.');
+        }
+
+        $pdo->prepare('INSERT IGNORE INTO wallets (user_id) VALUES (:user_id)')
+            ->execute(['user_id' => $userId]);
+        $statement = $pdo->prepare('SELECT balance_xaf FROM wallets WHERE user_id = :user_id FOR UPDATE');
+        $statement->execute(['user_id' => $userId]);
+        $balance = (int) $statement->fetchColumn();
+        if ($balance < PREMIUM_CHECKOUT_AMOUNT_XAF) {
+            throw new RuntimeException('Your wallet needs at least 500 XAF to purchase Premium. Add funds to your wallet first.');
+        }
+
+        $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $expiryBase = $now;
+        if ((int) $account['is_premium'] === 1 && $account['premium_expires_at'] !== null) {
+            $currentExpiry = new DateTimeImmutable((string) $account['premium_expires_at'], new DateTimeZone('UTC'));
+            if ($currentExpiry > $now) {
+                $expiryBase = $currentExpiry;
+            }
+        }
+        $newExpiry = $expiryBase->modify('+' . PREMIUM_CHECKOUT_TERM_DAYS . ' days')->format('Y-m-d H:i:s');
+        $newBalance = $balance - PREMIUM_CHECKOUT_AMOUNT_XAF;
+
+        $statement = $pdo->prepare(
+            'UPDATE wallets SET balance_xaf = :balance
+             WHERE user_id = :user_id AND balance_xaf >= :amount'
+        );
+        $statement->execute([
+            'balance' => $newBalance,
+            'user_id' => $userId,
+            'amount' => PREMIUM_CHECKOUT_AMOUNT_XAF,
+        ]);
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('Your wallet balance changed. Refresh the dashboard and try again.');
+        }
+
+        $statement = $pdo->prepare(
+            'UPDATE users SET is_premium = 1, premium_expires_at = :expires_at WHERE id = :id'
+        );
+        $statement->execute(['expires_at' => $newExpiry, 'id' => $userId]);
+        $statement = $pdo->prepare(
+            "INSERT INTO wallet_transactions
+             (user_id, transaction_type, amount_xaf, balance_after_xaf, event_key)
+             VALUES (:user_id, 'premium_purchase', :amount, :balance, :event_key)"
+        );
+        $statement->execute([
+            'user_id' => $userId,
+            'amount' => PREMIUM_CHECKOUT_AMOUNT_XAF,
+            'balance' => $newBalance,
+            'event_key' => 'premium:' . momo_uuid(),
+        ]);
+        $pdo->commit();
+
+        if (isset($_SESSION['user']) && (int) $_SESSION['user']['id'] === $userId) {
+            $_SESSION['user']['is_premium'] = 1;
+            $_SESSION['user']['premium_expires_at'] = $newExpiry;
+        }
+        return $newExpiry;
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
 }
 
 if (isset($_GET['profile_picture'])) {
@@ -281,6 +549,23 @@ function load_employer_dashboard_data(PDO $pdo, int $employerId): array
         ];
     }
 
+    $statement = $pdo->prepare(
+        'SELECT id, title, location, status
+         FROM jobs
+         WHERE employer_id = :employer_id
+         ORDER BY created_at DESC, id DESC'
+    );
+    $statement->execute(['employer_id' => $employerId]);
+    $mapJobs = array_map(
+        static fn (array $job): array => [
+            'id' => (int) $job['id'],
+            'title' => (string) $job['title'],
+            'location' => (string) $job['location'],
+            'status' => (string) $job['status'],
+        ],
+        $statement->fetchAll()
+    );
+
     return [
         'jobs' => [
             'total' => (int) $jobStats['total_jobs'],
@@ -294,6 +579,7 @@ function load_employer_dashboard_data(PDO $pdo, int $employerId): array
             'rejected' => $applicationStats['rejected'],
         ],
         'trend' => $trend,
+        'map_jobs' => $mapJobs,
     ];
 }
 
@@ -485,7 +771,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $password = (string) ($_POST['password'] ?? '');
             $pdo = db();
             $pdo->beginTransaction();
-            $statement = $pdo->prepare('SELECT id, email, password_hash, role, display_name, failed_login_attempts, otp_hash, otp_expires_at, otp_last_sent_at FROM users WHERE email = :email FOR UPDATE');
+            $statement = $pdo->prepare('SELECT id, email, password_hash, role, display_name, failed_login_attempts, otp_hash, otp_expires_at, otp_last_sent_at, is_premium, premium_expires_at FROM users WHERE email = :email FOR UPDATE');
             $statement->execute(['email' => $email]);
             $user = $statement->fetch();
 
@@ -584,6 +870,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Enter a valid job title, location, job type, and description.');
             }
 
+            $countStatement = $pdo->prepare(
+                'SELECT COUNT(*) FROM jobs WHERE employer_id = :employer_id AND status = :status'
+            );
+            $countStatement->execute(['employer_id' => $user['id'], 'status' => 'available']);
+            $activeJobs = (int) $countStatement->fetchColumn();
+            if ($activeJobs >= 8 && !user_has_active_premium($user)) {
+                throw new RuntimeException('Your free plan allows up to 8 active jobs. Upgrade to premium to post more than 8 roles.');
+            }
+
             $statement = db()->prepare(
                 'INSERT INTO jobs (employer_id, title, location, employment_type, description, skills)
                  VALUES (:employer_id, :title, :location, :employment_type, :description, :skills)'
@@ -596,12 +891,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'description' => $description,
                 'skills' => $skills !== '' ? $skills : null,
             ]);
-            $notice = 'Your job has been posted and is now available to candidates.';
+            $notice = 'Your job has been posted and is now available to job seekers.';
             $view = 'dashboard';
         } elseif ($action === 'apply_job') {
             $user = signed_in_user();
             if ($user === null || $user['role'] !== 'candidate') {
-                throw new RuntimeException('Only signed-in candidates can apply for jobs.');
+                throw new RuntimeException('Only signed-in job seekers can apply for jobs.');
             }
 
             $jobId = filter_var($_POST['job_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -625,6 +920,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo = db();
             $pdo->beginTransaction();
+            $premiumAllowed = user_has_active_premium($user);
+            if (!$premiumAllowed) {
+                $statement = $pdo->prepare(
+                    'SELECT id FROM users WHERE id = :id AND role = :role FOR UPDATE'
+                );
+                $statement->execute(['id' => $user['id'], 'role' => 'candidate']);
+                if ($statement->fetchColumn() === false) {
+                    throw new RuntimeException('Your job seeker account could not be found. Sign out and sign in again.');
+                }
+
+                $jobViewMonth = current_view_month();
+                $statement = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM job_views
+                     WHERE user_id = :user_id AND view_month = :view_month'
+                );
+                $statement->execute([
+                    'user_id' => $user['id'],
+                    'view_month' => $jobViewMonth,
+                ]);
+                $jobViewsThisMonth = (int) $statement->fetchColumn();
+
+                $statement = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM job_views
+                     WHERE user_id = :user_id AND job_id = :job_id AND view_month = :view_month'
+                );
+                $statement->execute([
+                    'user_id' => $user['id'],
+                    'job_id' => $jobId,
+                    'view_month' => $jobViewMonth,
+                ]);
+                if ((int) $statement->fetchColumn() !== 1) {
+                    if ($jobViewsThisMonth >= $candidateJobViewLimit) {
+                        throw new RuntimeException('Your free plan allows you to view only 8 jobs per month. Upgrade to Premium for more job views.');
+                    }
+                    throw new RuntimeException('Open this job from your available job listings before applying.');
+                }
+            }
+
             $statement = $pdo->prepare('SELECT status FROM jobs WHERE id = :id FOR UPDATE');
             $statement->execute(['id' => $jobId]);
             if ($statement->fetchColumn() !== 'available') {
@@ -645,221 +980,205 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->commit();
             $notice = 'Your application has been sent to the employer.';
             $view = 'dashboard';
-        } elseif ($action === 'start_unlock_payment') {
+        } elseif ($action === 'start_premium_payment') {
+            throw new RuntimeException('Direct Premium checkout is disabled. Add funds to your wallet, then purchase Premium from your balance.');
+        } elseif ($action === 'start_wallet_topup') {
             $user = signed_in_user();
-            if ($user === null || $user['role'] !== 'employer') {
-                throw new RuntimeException('Only signed-in employers can request access to applicant details.');
+            if ($user === null) {
+                throw new RuntimeException('Sign in before adding funds to your wallet.');
             }
-            if (!$momoConfigured) {
-                throw new RuntimeException('Automatic MTN payment is not configured on the server. Ask the administrator to configure the MTN Collection API settings.');
+            if (!momo_sandbox_is_configured()) {
+                throw new RuntimeException('MTN MoMo sandbox top-up is not configured. Ask the administrator to configure the server credentials.');
             }
 
-            $applicationId = filter_var($_POST['application_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-            $submittedPhone = $_POST['payer_phone'] ?? '';
-            $payerPhone = is_string($submittedPhone) ? normalize_cameroon_phone($submittedPhone) : null;
-            if ($applicationId === false || $payerPhone === null) {
-                throw new RuntimeException('Enter a valid Cameroon MTN number, for example 682268179 or +237682268179.');
+            $phoneNumber = normalize_cameroon_phone((string) ($_POST['mobile_money_number'] ?? ''));
+            if ($phoneNumber === null) {
+                throw new RuntimeException('Enter a valid Cameroon MTN mobile number, such as +237 6XX XXX XXX.');
+            }
+            $accessToken = momo_access_token();
+            $pdo = db();
+            $pdo->beginTransaction();
+            try {
+                $statement = $pdo->prepare('SELECT id FROM users WHERE id = :id FOR UPDATE');
+                $statement->execute(['id' => $user['id']]);
+                if ($statement->fetchColumn() === false) {
+                    throw new RuntimeException('Your account could not be found. Sign out and sign in again.');
+                }
+
+                $statement = $pdo->prepare(
+                    "SELECT id FROM wallet_topups
+                     WHERE user_id = :user_id AND status = 'pending'
+                     ORDER BY id DESC
+                     LIMIT 1
+                     FOR UPDATE"
+                );
+                $statement->execute(['user_id' => $user['id']]);
+                if ($statement->fetchColumn() !== false) {
+                    throw new RuntimeException('You already have a pending wallet top-up. Refresh its status before starting another.');
+                }
+
+                $referenceId = momo_uuid();
+                $externalId = bin2hex(random_bytes(16));
+                $statement = $pdo->prepare(
+                    "INSERT INTO wallet_topups
+                     (user_id, provider_reference_id, external_id, amount, currency, status)
+                     VALUES (:user_id, :provider_reference_id, :external_id, :amount, 'XAF', 'pending')"
+                );
+                $statement->execute([
+                    'user_id' => $user['id'],
+                    'provider_reference_id' => $referenceId,
+                    'external_id' => $externalId,
+                    'amount' => PREMIUM_CHECKOUT_AMOUNT_XAF,
+                ]);
+                $topupId = (int) $pdo->lastInsertId();
+                $pdo->commit();
+            } catch (Throwable $exception) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $exception;
+            }
+
+            try {
+                momo_start_wallet_topup_request($referenceId, $externalId, $phoneNumber, $accessToken);
+                $notice = 'A 500 XAF sandbox top-up request was sent to your MTN MoMo number. Approve it on your phone, then refresh the wallet status.';
+                $noticeType = 'success';
+            } catch (RuntimeException $exception) {
+                if ($exception->getCode() >= 400 && $exception->getCode() < 500) {
+                    $pdo->prepare(
+                        "UPDATE wallet_topups SET status = 'failed'
+                         WHERE id = :id AND user_id = :user_id AND status = 'pending'"
+                    )->execute(['id' => $topupId, 'user_id' => $user['id']]);
+                }
+                throw $exception;
+            }
+            $view = 'dashboard';
+        } elseif ($action === 'buy_premium_wallet') {
+            $user = signed_in_user();
+            if ($user === null) {
+                throw new RuntimeException('Sign in before purchasing Premium.');
+            }
+            $expiry = purchase_premium_with_wallet(db(), (int) $user['id']);
+            $notice = 'Premium purchased from your wallet and active until ' . $expiry . ' UTC.';
+            $view = 'dashboard';
+        } elseif ($action === 'check_wallet_topup') {
+            $user = signed_in_user();
+            if ($user === null) {
+                throw new RuntimeException('Sign in to check your wallet top-up status.');
+            }
+
+            $topupId = filter_var(
+                $_POST['topup_id'] ?? null,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]]
+            );
+            if ($topupId === false) {
+                throw new RuntimeException('Choose a valid wallet top-up.');
             }
 
             $pdo = db();
-            $pdo->beginTransaction();
             $statement = $pdo->prepare(
-                'SELECT applications.id
-                 FROM applications
-                 INNER JOIN jobs ON jobs.id = applications.job_id
-                 WHERE applications.id = :application_id AND jobs.employer_id = :employer_id
-                 FOR UPDATE'
+                'SELECT id, provider_reference_id, external_id, amount, currency, status
+                 FROM wallet_topups
+                 WHERE id = :id AND user_id = :user_id'
             );
-            $statement->execute(['application_id' => $applicationId, 'employer_id' => $user['id']]);
-            if ($statement->fetchColumn() === false) {
-                throw new RuntimeException('That application does not belong to one of your jobs.');
+            $statement->execute(['id' => $topupId, 'user_id' => $user['id']]);
+            $topup = $statement->fetch();
+            if (!$topup) {
+                throw new RuntimeException('This wallet top-up could not be found for your account.');
             }
 
-            $statement = $pdo->prepare(
-                'SELECT status, payment_method FROM application_unlock_payments
-                 WHERE application_id = :application_id ORDER BY id DESC LIMIT 1 FOR UPDATE'
-            );
-            $statement->execute(['application_id' => $applicationId]);
-            $latestPayment = $statement->fetch();
-            if ($latestPayment && $latestPayment['status'] === 'approved') {
-                throw new RuntimeException('This application has already been unlocked.');
-            }
-            if ($latestPayment && $latestPayment['status'] === 'pending') {
-                throw new RuntimeException(
-                    $latestPayment['payment_method'] === 'mtn_momo'
-                        ? 'A Mobile Money request is already pending. Check its status before trying again.'
-                        : 'A previous payment reference is still awaiting review.'
-                );
-            }
+            if ($topup['status'] === 'successful') {
+                $notice = 'This wallet top-up was already confirmed.';
+            } elseif ($topup['status'] !== 'pending') {
+                throw new RuntimeException('This wallet top-up did not complete. Start a new top-up when ready.');
+            } else {
+                $providerPayment = momo_read_wallet_topup_request((string) $topup['provider_reference_id']);
+                $providerStatus = strtoupper((string) ($providerPayment['status'] ?? ''));
+                if ($providerStatus === 'SUCCESSFUL') {
+                    if (!momo_payment_matches_order($providerPayment, $topup)) {
+                        error_log(sprintf(
+                            'SkillsPassAurora MTN MoMo confirmation did not match wallet top-up %d.',
+                            $topupId
+                        ));
+                        throw new RuntimeException('The provider confirmation did not match this wallet top-up. No funds were added; contact support with your reference.');
+                    }
 
-            $transactionReference = new_payment_reference();
-            $statement = $pdo->prepare(
-                'INSERT INTO application_unlock_payments
-                    (application_id, employer_id, amount_xaf, transaction_reference, payment_method, payer_phone)
-                 VALUES (:application_id, :employer_id, :amount_xaf, :transaction_reference, \'mtn_momo\', :payer_phone)'
-            );
-            $statement->execute([
-                'application_id' => $applicationId,
-                'employer_id' => $user['id'],
-                'amount_xaf' => $unlockPriceXaf,
-                'transaction_reference' => $transactionReference,
-                'payer_phone' => $payerPhone,
-            ]);
-            $momoConfig = [
-                'base_url' => $momoBaseUrl,
-                'api_user' => $momoApiUser,
-                'api_key' => $momoApiKey,
-                'subscription_key' => $momoSubscriptionKey,
-                'target_environment' => $momoTargetEnvironment,
-            ];
-            $accessToken = momo_access_token($momoConfig);
-            $pdo->commit();
-
-            $paymentResponse = momo_api_call(
-                'POST',
-                '/collection/v1_0/requesttopay',
-                $momoConfig,
-                [
-                    'amount' => (string) $unlockPriceXaf,
-                    'currency' => 'XAF',
-                    'externalId' => 'unlock-' . $applicationId . '-' . str_replace('-', '', $transactionReference),
-                    'payer' => [
-                        'partyIdType' => 'MSISDN',
-                        'partyId' => $payerPhone,
-                    ],
-                    'payerMessage' => 'SkillsPassAurora applicant access',
-                    'payeeNote' => 'Applicant details unlock',
-                ],
-                $accessToken,
-                $transactionReference
-            );
-            if ($paymentResponse['status'] >= 400 && $paymentResponse['status'] < 500) {
-                db()->prepare(
-                    "UPDATE application_unlock_payments
-                     SET status = 'rejected', reviewed_at = UTC_TIMESTAMP()
-                     WHERE transaction_reference = :reference AND status = 'pending'"
-                )->execute(['reference' => $transactionReference]);
-                error_log('SkillsPassAurora MTN MoMo payment request was rejected (HTTP ' . $paymentResponse['status'] . ').');
-                throw new RuntimeException('MTN Mobile Money did not accept the payment request. Check the phone number and try again.');
+                    $balance = credit_wallet_topup($pdo, (int) $user['id'], $topupId);
+                    $notice = 'Top-up confirmed. Your wallet balance is now ' . number_format($balance) . ' XAF.';
+                } elseif ($providerStatus === 'FAILED') {
+                    $pdo->prepare(
+                        "UPDATE wallet_topups SET status = 'failed'
+                         WHERE id = :id AND user_id = :user_id AND status = 'pending'"
+                    )->execute(['id' => $topupId, 'user_id' => $user['id']]);
+                    throw new RuntimeException('The mobile-money top-up was declined or cancelled. You can start a new top-up.');
+                } else {
+                    $notice = 'The mobile-money top-up is still pending. Approve the request on your phone, then refresh again.';
+                }
             }
-            if ($paymentResponse['status'] !== 202) {
-                error_log('SkillsPassAurora MTN MoMo payment request has an unconfirmed result (HTTP ' . $paymentResponse['status'] . ').');
-                throw new RuntimeException('MTN has not confirmed whether the payment request was created. Check its status before trying again.');
-            }
-
-            $notice = 'Payment request sent to ' . $payerPhone . '. Approve the XAF ' . $unlockPriceXaf . ' request on your phone, then check its status here.';
             $view = 'dashboard';
-        } elseif ($action === 'check_unlock_payment') {
+        } elseif ($action === 'check_premium_payment') {
             $user = signed_in_user();
-            if ($user === null || $user['role'] !== 'employer') {
-                throw new RuntimeException('Only the employer who started the payment can check its status.');
-            }
-            if (!$momoConfigured) {
-                throw new RuntimeException('Automatic MTN payment is not configured on the server. Ask the administrator to configure the MTN Collection API settings.');
+            if ($user === null) {
+                throw new RuntimeException('Sign in to check your payment status.');
             }
 
-            $paymentId = filter_var($_POST['payment_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-            if ($paymentId === false) {
-                throw new RuntimeException('Choose a valid payment request.');
-            }
-
-            $statement = db()->prepare(
-                "SELECT transaction_reference, status FROM application_unlock_payments
-                 WHERE id = :id AND employer_id = :employer_id AND payment_method = 'mtn_momo'"
+            $paymentId = filter_var(
+                $_POST['payment_id'] ?? null,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]]
             );
-            $statement->execute(['id' => $paymentId, 'employer_id' => $user['id']]);
+            if ($paymentId === false) {
+                throw new RuntimeException('Choose a valid Premium payment.');
+            }
+
+            $pdo = db();
+            $statement = $pdo->prepare(
+                'SELECT id, user_id, provider_reference_id, external_id, amount, currency, premium_days, status
+                 FROM premium_payments
+                 WHERE id = :id AND user_id = :user_id'
+            );
+            $statement->execute(['id' => $paymentId, 'user_id' => $user['id']]);
             $payment = $statement->fetch();
             if (!$payment) {
-                throw new RuntimeException('That payment request could not be found.');
-            }
-            if ($payment['status'] !== 'pending') {
-                throw new RuntimeException('This payment request has already been ' . $payment['status'] . '.');
+                throw new RuntimeException('This payment could not be found for your account.');
             }
 
-            $momoConfig = [
-                'base_url' => $momoBaseUrl,
-                'api_user' => $momoApiUser,
-                'api_key' => $momoApiKey,
-                'subscription_key' => $momoSubscriptionKey,
-                'target_environment' => $momoTargetEnvironment,
-            ];
-            $accessToken = momo_access_token($momoConfig);
-            $statusResponse = momo_api_call(
-                'GET',
-                '/collection/v1_0/requesttopay/' . rawurlencode((string) $payment['transaction_reference']),
-                $momoConfig,
-                null,
-                $accessToken
-            );
-            if ($statusResponse['status'] !== 200 || !isset($statusResponse['data']['status'])) {
-                error_log('SkillsPassAurora MTN MoMo payment status check failed (HTTP ' . $statusResponse['status'] . ').');
-                throw new RuntimeException('MTN could not confirm the payment status yet. Please check again shortly.');
-            }
-
-            $providerStatus = strtoupper((string) $statusResponse['data']['status']);
-            if (in_array($providerStatus, ['SUCCESSFUL', 'SUCCESS'], true)) {
-                db()->prepare(
-                    "UPDATE application_unlock_payments
-                     SET status = 'approved', reviewed_at = UTC_TIMESTAMP()
-                     WHERE id = :id AND employer_id = :employer_id AND status = 'pending'"
-                )->execute(['id' => $paymentId, 'employer_id' => $user['id']]);
-                $notice = 'Payment confirmed. The employee information is now unlocked.';
-            } elseif (in_array($providerStatus, ['FAILED', 'REJECTED'], true)) {
-                db()->prepare(
-                    "UPDATE application_unlock_payments
-                     SET status = 'rejected', reviewed_at = UTC_TIMESTAMP()
-                     WHERE id = :id AND employer_id = :employer_id AND status = 'pending'"
-                )->execute(['id' => $paymentId, 'employer_id' => $user['id']]);
-                $notice = 'MTN reports that the payment was not completed. You can try again.';
-                $noticeType = 'error';
+            if ($payment['status'] === 'successful') {
+                $notice = 'This payment was already confirmed. Premium access is active.';
+            } elseif ($payment['status'] !== 'pending') {
+                throw new RuntimeException('This payment did not complete. Start a new payment when you are ready.');
             } else {
-                $notice = 'The payment is still pending. Approve the request on your phone, then check again.';
-            }
-            $view = 'dashboard';
-        } elseif ($action === 'review_unlock_payment') {
-            $user = signed_in_user();
-            if (!is_payment_admin($user)) {
-                throw new RuntimeException('You are not authorized to review payment references.');
-            }
+                $providerPayment = momo_read_premium_request((string) $payment['provider_reference_id']);
+                $providerStatus = strtoupper((string) ($providerPayment['status'] ?? ''));
+                if ($providerStatus === 'SUCCESSFUL') {
+                    if (!momo_payment_matches_order($providerPayment, $payment)) {
+                        error_log(sprintf(
+                            'SkillsPassAurora MTN MoMo confirmation did not match payment record %d.',
+                            $paymentId
+                        ));
+                        throw new RuntimeException('The provider confirmation did not match this order. Premium was not activated; contact support with your payment reference.');
+                    }
 
-            $paymentId = filter_var($_POST['payment_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-            $decision = $_POST['decision'] ?? '';
-            if ($paymentId === false || !is_string($decision) || !in_array($decision, ['approve', 'reject'], true)) {
-                throw new RuntimeException('Choose a valid payment review action.');
+                    $expiry = activate_premium_payment($pdo, (int) $user['id'], $paymentId);
+                    $notice = $expiry === null
+                        ? 'Payment confirmed. Your Premium access has been extended.'
+                        : 'Payment confirmed. Premium is active until ' . $expiry . ' UTC.';
+                } elseif ($providerStatus === 'FAILED') {
+                    $pdo->prepare(
+                        "UPDATE premium_payments SET status = 'failed'
+                         WHERE id = :id AND user_id = :user_id AND status = 'pending'"
+                    )->execute(['id' => $paymentId, 'user_id' => $user['id']]);
+                    throw new RuntimeException('The mobile-money payment was declined or cancelled. You can start a new payment.');
+                } else {
+                    $notice = 'The mobile-money payment is still pending. Approve the request on your phone, then refresh again.';
+                }
             }
-
-            $pdo = db();
-            $pdo->beginTransaction();
-            $statement = $pdo->prepare('SELECT status FROM application_unlock_payments WHERE id = :id FOR UPDATE');
-            $statement->execute(['id' => $paymentId]);
-            if ($statement->fetchColumn() !== 'pending') {
-                throw new RuntimeException('This payment is no longer awaiting review.');
-            }
-
-            $newStatus = $decision === 'approve' ? 'approved' : 'rejected';
-            $statement = $pdo->prepare(
-                'UPDATE application_unlock_payments
-                 SET status = :status, reviewed_by = :reviewed_by, reviewed_at = UTC_TIMESTAMP()
-                 WHERE id = :id AND status = :pending_status'
-            );
-            $statement->execute([
-                'status' => $newStatus,
-                'reviewed_by' => $user['id'],
-                'id' => $paymentId,
-                'pending_status' => 'pending',
-            ]);
-            if ($statement->rowCount() !== 1) {
-                throw new RuntimeException('This payment is no longer awaiting review.');
-            }
-            $pdo->commit();
-            $notice = $decision === 'approve'
-                ? 'Payment verified. The employer can now view the applicant details.'
-                : 'Payment reference rejected. The employer can submit a new reference.';
             $view = 'dashboard';
         } elseif ($action === 'hire_candidate') {
             $user = signed_in_user();
             if ($user === null || $user['role'] !== 'employer') {
-                throw new RuntimeException('Only signed-in employers can select a candidate.');
+                throw new RuntimeException('Only signed-in employers can select a job seeker.');
             }
 
             $jobId = filter_var($_POST['job_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -878,21 +1197,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $statement = $pdo->prepare(
                 "UPDATE applications SET status = 'accepted'
-                 WHERE job_id = :job_id AND candidate_id = :candidate_id AND status = 'pending'
-                   AND EXISTS (
-                       SELECT 1 FROM application_unlock_payments
-                       WHERE application_unlock_payments.application_id = applications.id
-                         AND application_unlock_payments.employer_id = :employer_id
-                         AND application_unlock_payments.status = 'approved'
-                   )"
+                 WHERE job_id = :job_id AND candidate_id = :candidate_id AND status = 'pending'"
             );
             $statement->execute([
                 'job_id' => $jobId,
                 'candidate_id' => $candidateId,
-                'employer_id' => $user['id'],
             ]);
             if ($statement->rowCount() !== 1) {
-                throw new RuntimeException('That candidate does not have an unlocked pending application for this job.');
+                throw new RuntimeException('That job seeker does not have a pending application for this job.');
             }
 
             $statement = $pdo->prepare(
@@ -908,7 +1220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute(['job_id' => $jobId]);
             $pdo->commit();
 
-            $notice = 'Candidate selected. The job is now marked Taken and other pending applications are closed.';
+            $notice = 'Job seeker selected. The job is now marked Taken and other pending applications are closed.';
             $view = 'dashboard';
         } elseif ($action === 'logout') {
             $_SESSION = [];
@@ -929,7 +1241,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notice = match ([$action, (string) $exception->getCode()]) {
             ['register', '23000'] => 'An account already exists for that email.',
             ['apply_job', '23000'] => 'You have already applied for this job.',
-            ['submit_unlock_payment', '23000'] => 'That MTN transaction reference has already been submitted. Check it and try again.',
+            ['start_wallet_topup', '42S02'], ['check_wallet_topup', '42S02'], ['buy_premium_wallet', '42S02'] => 'Wallet storage is not set up yet. Import schema.sql, then try again.',
+            ['start_wallet_topup', '42S22'], ['check_wallet_topup', '42S22'], ['buy_premium_wallet', '42S22'] => 'Wallet storage does not match the current schema. Re-import schema.sql, then try again.',
+            ['check_premium_payment', '42S02'] => 'Premium payment storage is not set up yet. Import schema.sql, then try again.',
             ['upload_profile_picture', '42S22'] => 'Profile picture storage is not set up yet. Re-import schema.sql, then try again.',
             ['create_job', '42S02'] => 'The jobs table is missing. Import schema.sql into the configured database, then try again.',
             ['create_job', '42S22'] => 'The jobs table does not match the current schema. Update it using schema.sql, then try again.',
@@ -968,17 +1282,24 @@ if (signed_in_user() !== null) {
 
 try {
     $pdo = db();
-    $statement = $pdo->query(
-        "SELECT jobs.*, users.display_name AS employer_name,
-                (SELECT COUNT(*) FROM applications WHERE applications.job_id = jobs.id) AS application_count
-         FROM jobs
-         INNER JOIN users ON users.id = jobs.employer_id
-         ORDER BY (jobs.status = 'available') DESC, jobs.created_at DESC"
-    );
-    $jobs = $statement->fetchAll();
+    $user = signed_in_user();
+    if ($user !== null && $user['role'] === 'candidate' && !user_has_active_premium($user)
+        && in_array($view, ['jobs', 'dashboard'], true)) {
+        $candidateJobs = load_free_candidate_jobs($pdo, (int) $user['id'], $candidateJobViewLimit);
+        $jobs = $candidateJobs['jobs'];
+        $candidateJobViewCount = $candidateJobs['view_count'];
+    } else {
+        $statement = $pdo->query(
+            "SELECT jobs.*, users.display_name AS employer_name,
+                    (SELECT COUNT(*) FROM applications WHERE applications.job_id = jobs.id) AS application_count
+             FROM jobs
+             INNER JOIN users ON users.id = jobs.employer_id
+             ORDER BY (jobs.status = 'available') DESC, jobs.created_at DESC"
+        );
+        $jobs = $statement->fetchAll();
+    }
     $jobsLoaded = true;
 
-    $user = signed_in_user();
     if ($view === 'public_profile') {
         $publicProfileId = filter_var(
             $_GET['id'] ?? null,
@@ -1005,31 +1326,65 @@ try {
         $statement->execute(['id' => $user['id']]);
         $profileData = $statement->fetch() ?: null;
     }
+    if ($user !== null && $view === 'dashboard') {
+        try {
+            $pdo->prepare('INSERT IGNORE INTO wallets (user_id) VALUES (:user_id)')
+                ->execute(['user_id' => $user['id']]);
+            $statement = $pdo->prepare('SELECT balance_xaf FROM wallets WHERE user_id = :user_id');
+            $statement->execute(['user_id' => $user['id']]);
+            $walletBalance = (int) $statement->fetchColumn();
+
+            $statement = $pdo->prepare(
+                'SELECT id, amount, currency, status, created_at
+                 FROM wallet_topups
+                 WHERE user_id = :user_id
+                 ORDER BY id DESC
+                 LIMIT 5'
+            );
+            $statement->execute(['user_id' => $user['id']]);
+            $latestWalletTopups = $statement->fetchAll();
+
+            $statement = $pdo->prepare(
+                'SELECT transaction_type, amount_xaf, balance_after_xaf, created_at
+                 FROM wallet_transactions
+                 WHERE user_id = :user_id
+                 ORDER BY id DESC
+                 LIMIT 5'
+            );
+            $statement->execute(['user_id' => $user['id']]);
+            $latestWalletTransactions = $statement->fetchAll();
+        } catch (PDOException $exception) {
+            error_log('SkillsPassAurora wallet data could not be loaded: ' . $exception->getMessage());
+            $walletStorageReady = false;
+        }
+
+        try {
+            $statement = $pdo->prepare(
+                'SELECT id, amount, currency, premium_days, status, created_at
+                 FROM premium_payments
+                 WHERE user_id = :user_id
+                 ORDER BY id DESC
+                 LIMIT 5'
+            );
+            $statement->execute(['user_id' => $user['id']]);
+            $latestPremiumPayments = $statement->fetchAll();
+        } catch (PDOException $exception) {
+            error_log('SkillsPassAurora Premium payment history could not be loaded: ' . $exception->getMessage());
+            $notice = 'Premium payment history is unavailable. Re-import schema.sql to restore payment records.';
+            $noticeType = 'error';
+        }
+    }
     if ($user !== null && $user['role'] === 'employer') {
         $employerDashboardData = load_employer_dashboard_data($pdo, (int) $user['id']);
         $statement = $pdo->prepare(
             'SELECT applications.id AS application_id, applications.job_id, applications.candidate_id,
                     applications.status, applications.created_at,
-                    CASE WHEN unlocked.id IS NOT NULL THEN applications.cover_letter END AS cover_letter,
-                    CASE WHEN unlocked.id IS NOT NULL THEN applications.relevant_experience END AS relevant_experience,
-                    CASE WHEN unlocked.id IS NOT NULL THEN applications.portfolio_url END AS portfolio_url,
-                    CASE WHEN unlocked.id IS NOT NULL THEN users.display_name END AS candidate_name,
-                    CASE WHEN unlocked.id IS NOT NULL THEN users.email END AS candidate_email,
-                    (unlocked.id IS NOT NULL) AS is_unlocked,
-                    latest_payment.id AS latest_payment_id,
-                    latest_payment.status AS latest_payment_status,
-                    latest_payment.payment_method AS latest_payment_method,
-                    latest_payment.payer_phone AS latest_payer_phone
+                    applications.cover_letter, applications.relevant_experience, applications.portfolio_url,
+                    users.display_name AS candidate_name, users.email AS candidate_email,
+                    1 AS is_unlocked
              FROM applications
              INNER JOIN jobs ON jobs.id = applications.job_id
              INNER JOIN users ON users.id = applications.candidate_id
-             LEFT JOIN application_unlock_payments AS unlocked
-               ON unlocked.application_id = applications.id AND unlocked.status = \'approved\'
-             LEFT JOIN application_unlock_payments AS latest_payment
-               ON latest_payment.id = (
-                   SELECT MAX(id) FROM application_unlock_payments
-                   WHERE application_id = applications.id
-               )
              WHERE jobs.employer_id = :employer_id
              ORDER BY applications.created_at DESC'
         );
@@ -1044,20 +1399,6 @@ try {
             $candidateApplications[$application['job_id']] = $application['status'];
         }
     }
-    if ($user !== null && is_payment_admin($user)) {
-        $statement = $pdo->query(
-            "SELECT payments.id, payments.amount_xaf, payments.transaction_reference, payments.created_at,
-                    jobs.title AS job_title, employers.display_name AS employer_name,
-                    employers.email AS employer_email
-             FROM application_unlock_payments AS payments
-             INNER JOIN applications ON applications.id = payments.application_id
-             INNER JOIN jobs ON jobs.id = applications.job_id
-             INNER JOIN users AS employers ON employers.id = payments.employer_id
-             WHERE payments.status = 'pending' AND payments.payment_method = 'manual'
-             ORDER BY payments.created_at ASC"
-        );
-        $pendingUnlockPayments = $statement->fetchAll();
-    }
 } catch (PDOException $exception) {
     error_log('SkillsPassAurora dashboard data could not be loaded: ' . $exception->getMessage());
     $notice = 'Dashboard data could not be loaded. Check the database setup and try again.';
@@ -1069,7 +1410,7 @@ try {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SkillsPassAurora | Proving What You Can Do</title>
+    <title>SkillsPassAurora | Your Skills Are Not Useless</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="<?= $view === 'landing' ? 'landing-site' : 'application-site' ?>">
@@ -1081,10 +1422,6 @@ try {
             </span>
             <span class="brand-name">SkillsPassAurora</span>
         </a>
-        <div class="landing-nav-links">
-            <a href="index.php?page=jobs">Browse jobs</a>
-            <a href="index.php#contact">Contact us</a>
-        </div>
         <?php if (signed_in_user() !== null): ?>
             <form method="post">
                 <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
@@ -1100,7 +1437,7 @@ try {
 <?php if ($view !== 'landing'): ?>
     <?php
     $navigationUser = signed_in_user();
-    $navigationRole = ($navigationUser['role'] ?? '') === 'candidate' ? 'Employee' : 'Employer';
+    $navigationRole = ($navigationUser['role'] ?? '') === 'candidate' ? 'Job Seeker' : 'Employer';
     ?>
     <div class="dashboard-layout">
         <aside class="dashboard-sidebar" aria-label="Page navigation">
@@ -1214,8 +1551,9 @@ try {
         <section class="landing-hero">
             <div class="landing-hero-inner">
                 <div class="landing-copy">
-                    <p class="eyebrow">SkillsPassAurora &middot; Skills-first opportunities</p>
-                    <h1>Find work that fits your skills.</h1>
+                    <p class="eyebrow">Skills-first opportunities</p>
+                    <h1>SkillsPassAurora</h1>
+                    <p class="landing-motto">Your skills are not useless.</p>
                     <p class="landing-description">Discover opportunities, show employers what you can do, and build your next career step with confidence.</p>
                     <div class="landing-actions">
                         <a class="primary-link" href="index.php?page=jobs">Browse available jobs <span aria-hidden="true">&rarr;</span></a>
@@ -1308,7 +1646,7 @@ try {
             <div>
                 <p class="eyebrow">For employers</p>
                 <h2>Meet people who can do the work.</h2>
-                <p>Share an opportunity, review candidates’ skills and work samples, and find the right fit for your team.</p>
+                <p>Share an opportunity, review job seekers’ skills and work samples, and find the right fit for your team.</p>
             </div>
             <a class="primary-link" href="index.php?page=auth&amp;mode=signup&amp;role=employer">Find your next hire <span aria-hidden="true">&rarr;</span></a>
         </section>
@@ -1404,7 +1742,7 @@ try {
         <section class="auth-panel job-form-panel" id="post-job">
             <p class="eyebrow">For employers</p>
             <h1>Post a job</h1>
-            <p class="muted">Share a role with candidates looking for their next opportunity.</p>
+            <p class="muted">Share a role with job seekers looking for their next opportunity.</p>
             <form class="stack" method="post" autocomplete="off">
                 <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
                 <input type="hidden" name="action" value="create_job">
@@ -1440,11 +1778,130 @@ try {
         </section>
     <?php elseif ($view === 'dashboard'): ?>
         <?php $user = signed_in_user(); ?>
-        <?php $workspaceRole = ($user['role'] ?? '') === 'candidate' ? 'Employee' : 'Employer'; ?>
+        <?php $workspaceRole = ($user['role'] ?? '') === 'candidate' ? 'Job Seeker' : 'Employer'; ?>
         <section class="welcome-panel dashboard-welcome" id="dashboard-overview">
             <p class="eyebrow">Welcome</p>
             <h1>Welcome to SkillsPassAurora, <?= escape($user['display_name'] ?? '') ?>.</h1>
             <p class="muted">Your <?= escape($workspaceRole) ?> account is ready. Browse jobs and see their current availability below.</p>
+        </section>
+        <section class="wallet-panel" id="wallet-panel" aria-labelledby="wallet-title">
+            <div class="wallet-heading">
+                <div>
+                    <p class="eyebrow">Digital wallet</p>
+                    <h2 id="wallet-title">Wallet balance</h2>
+                </div>
+                <strong class="wallet-balance"><?= number_format($walletBalance) ?> XAF</strong>
+            </div>
+            <p class="muted">Add 500 XAF using MTN MoMo, then use your wallet balance to purchase 50 days of Premium. Wallet funds are only for Premium and cannot be withdrawn.</p>
+            <?php if (!$walletStorageReady): ?>
+                <p class="wallet-setup-note">Wallet storage is not set up. Import <code>schema.sql</code>, then reload the dashboard.</p>
+            <?php elseif (!momo_sandbox_is_configured()): ?>
+                <p class="wallet-setup-note">MTN MoMo sandbox top-up is not configured. An administrator must configure the sandbox credentials on the server.</p>
+            <?php elseif (in_array('pending', array_column($latestWalletTopups, 'status'), true)): ?>
+                <p class="wallet-setup-note">A top-up is pending. Refresh its status below before starting another.</p>
+            <?php else: ?>
+                <form class="wallet-topup-form" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="start_wallet_topup">
+                    <div class="field">
+                        <label for="wallet-mobile-number">MTN Cameroon mobile-money number</label>
+                        <input id="wallet-mobile-number" name="mobile_money_number" type="tel" autocomplete="tel" maxlength="24" placeholder="+237 6XX XXX XXX" required>
+                        <span class="field-hint">Only a sandbox test number works while the integration is in test mode.</span>
+                    </div>
+                    <button type="submit">Add 500 XAF to wallet</button>
+                </form>
+            <?php endif; ?>
+            <?php if ($latestWalletTopups !== []): ?>
+                <div class="wallet-history">
+                    <h3>Recent wallet top-ups</h3>
+                    <?php foreach ($latestWalletTopups as $topup): ?>
+                        <div class="wallet-history-row">
+                            <div>
+                                <strong><?= number_format((int) $topup['amount']) ?> <?= escape($topup['currency']) ?> top-up</strong>
+                                <span class="muted">Started <?= escape((string) $topup['created_at']) ?> UTC</span>
+                            </div>
+                            <span class="premium-status premium-status-<?= escape((string) $topup['status']) ?>"><?= escape(ucfirst((string) $topup['status'])) ?></span>
+                            <?php if ($topup['status'] === 'pending'): ?>
+                                <form method="post">
+                                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="check_wallet_topup">
+                                    <input type="hidden" name="topup_id" value="<?= (int) $topup['id'] ?>">
+                                    <button class="secondary" type="submit">Refresh status</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($latestWalletTransactions !== []): ?>
+                <div class="wallet-history">
+                    <h3>Wallet activity</h3>
+                    <?php foreach ($latestWalletTransactions as $transaction): ?>
+                        <div class="wallet-history-row">
+                            <div>
+                                <strong><?= $transaction['transaction_type'] === 'top_up' ? 'Wallet top-up' : 'Premium purchase' ?></strong>
+                                <span class="muted"><?= escape((string) $transaction['created_at']) ?> UTC · Balance <?= number_format((int) $transaction['balance_after_xaf']) ?> XAF</span>
+                            </div>
+                            <strong><?= $transaction['transaction_type'] === 'top_up' ? '+' : '&minus;' ?><?= number_format((int) $transaction['amount_xaf']) ?> XAF</strong>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <p class="wallet-sandbox-note">Sandbox only: top-ups do not charge real money. Live payments require an approved MTN production merchant account and production credentials configured privately on the server.</p>
+        </section>
+        <section class="premium-panel" aria-labelledby="premium-title">
+            <div class="premium-heading">
+                <div>
+                    <p class="eyebrow">Membership</p>
+                    <h2 id="premium-title">Premium access</h2>
+                </div>
+                <?php if (user_has_active_premium($user)): ?>
+                    <span class="premium-status premium-status-successful">Active</span>
+                <?php else: ?>
+                    <span class="premium-status">Free plan</span>
+                <?php endif; ?>
+            </div>
+            <p class="muted">Use <?= number_format(PREMIUM_CHECKOUT_AMOUNT_XAF) ?> XAF from your wallet for <?= PREMIUM_CHECKOUT_TERM_DAYS ?> days of Premium.</p>
+            <?php if (user_has_active_premium($user)): ?>
+                <?php if (!empty($user['premium_expires_at'])): ?>
+                    <p class="premium-expiry">Your Premium access expires <?= escape((string) $user['premium_expires_at']) ?> UTC.</p>
+                <?php else: ?>
+                    <p class="premium-expiry">Your Premium access is active with no scheduled expiry.</p>
+                <?php endif; ?>
+            <?php elseif (!$walletStorageReady): ?>
+                <p class="premium-setup-note">Wallet storage is not set up. Import <code>schema.sql</code>, then reload the dashboard.</p>
+            <?php elseif ($walletBalance < PREMIUM_CHECKOUT_AMOUNT_XAF): ?>
+                <p class="premium-setup-note">Your wallet needs at least <?= number_format(PREMIUM_CHECKOUT_AMOUNT_XAF) ?> XAF. <a href="#wallet-panel">Add funds to your wallet</a> first.</p>
+            <?php else: ?>
+                <form class="wallet-topup-form" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="buy_premium_wallet">
+                    <button type="submit">Use wallet for <?= number_format(PREMIUM_CHECKOUT_AMOUNT_XAF) ?> XAF Premium</button>
+                </form>
+            <?php endif; ?>
+            <?php if ($latestPremiumPayments !== []): ?>
+                <div class="premium-history">
+                    <h3>Recent Premium payments</h3>
+                    <?php foreach ($latestPremiumPayments as $payment): ?>
+                        <div class="premium-payment-row">
+                            <div>
+                                <strong><?= number_format((int) $payment['amount']) ?> <?= escape($payment['currency']) ?> · <?= (int) $payment['premium_days'] ?> days</strong>
+                                <span class="muted">Started <?= escape((string) $payment['created_at']) ?> UTC</span>
+                            </div>
+                            <span class="premium-status premium-status-<?= escape((string) $payment['status']) ?>"><?= escape(ucfirst((string) $payment['status'])) ?></span>
+                            <?php if ($payment['status'] === 'pending'): ?>
+                                <form method="post">
+                                    <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="check_premium_payment">
+                                    <input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>">
+                                    <button class="secondary" type="submit">Refresh status</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <p class="premium-sandbox-note">A wallet top-up is credited only after MTN confirms the exact amount, currency, and transaction. Premium is activated only after an atomic wallet debit succeeds.</p>
         </section>
         <?php if (($user['role'] ?? '') === 'employer'): ?>
             <section class="employer-insights" aria-labelledby="employer-insights-title">
@@ -1498,7 +1955,7 @@ try {
                             <div class="chart-heading">
                                 <div>
                                     <h3>Application status</h3>
-                                    <p class="muted">Your candidates by review status</p>
+                                    <p class="muted">Your job seekers by review status</p>
                                 </div>
                             </div>
                             <svg class="dashboard-chart status-chart" data-chart="status" role="img" aria-label="Applications by pending, accepted, and rejected status"></svg>
@@ -1512,13 +1969,13 @@ try {
         <section class="auth-page">
             <div class="auth-brand-panel">
                 <a class="back-home" href="index.php">&larr; Back to home</a>
-                <img src="images/logo.jpeg" alt="SkillsPassAurora — Proving What You Can Do">
-                <p>Real skills. Real opportunities. A brighter future.</p>
+                <img src="images/logo.jpeg" alt="SkillsPassAurora — Your Skills Are Not Useless">
+                <p>Your skills are not useless.</p>
             </div>
             <div class="auth-panel auth-page-panel">
                 <p class="eyebrow"><?= $authMode === 'signup' ? 'Join the community' : 'Welcome back' ?></p>
                 <h1><?= $authMode === 'signup' ? 'Create your account' : 'Sign in to SkillsPass' ?></h1>
-                <p class="auth-intro"><?= $authMode === 'signup' ? ($signupRole === '' ? 'Choose how you want to use SkillsPassAurora.' : 'Create your ' . ($signupRole === 'candidate' ? 'employee' : 'employer') . ' account.') : 'Continue to your SkillsPassAurora account.' ?></p>
+                <p class="auth-intro"><?= $authMode === 'signup' ? ($signupRole === '' ? 'Choose how you want to use SkillsPassAurora.' : 'Create your ' . ($signupRole === 'candidate' ? 'job seeker' : 'employer') . ' account.') : 'Continue to your SkillsPassAurora account.' ?></p>
                 <?php if ($authMode === 'login'): ?>
                 <form class="stack" method="post" autocomplete="on">
                     <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
@@ -1543,7 +2000,7 @@ try {
                     <a class="role-option" href="index.php?page=auth&amp;mode=signup&amp;role=candidate">
                         <span class="role-option-icon" aria-hidden="true">&#128100;</span>
                         <span class="role-option-copy">
-                            <strong>Employee</strong>
+                            <strong>Job Seeker</strong>
                             <span>I'm looking for work and want to show employers my skills.</span>
                         </span>
                         <span class="role-option-arrow" aria-hidden="true">&rarr;</span>
@@ -1559,7 +2016,7 @@ try {
                 </div>
                 <?php else: ?>
                 <div class="selected-role">
-                    <span>Creating an account as an <strong><?= $signupRole === 'candidate' ? 'Employee' : 'Employer' ?></strong></span>
+                    <span>Creating an account as an <strong><?= $signupRole === 'candidate' ? 'Job Seeker' : 'Employer' ?></strong></span>
                     <a href="index.php?page=auth&amp;mode=signup">Change</a>
                 </div>
                 <form class="stack" method="post" autocomplete="off">
@@ -1590,41 +2047,6 @@ try {
             </div>
         </section>
     <?php endif; ?>
-    <?php $currentUser = signed_in_user(); ?>
-    <?php if (is_payment_admin($currentUser)): ?>
-        <section class="jobs-section payment-review-section">
-            <div class="section-heading">
-                <div>
-                    <p class="eyebrow">Developer review</p>
-                    <h2>MTN payment references</h2>
-                </div>
-                <p class="muted">Verify each reference against your MTN Mobile Money records before approving it.</p>
-            </div>
-            <?php if ($pendingUnlockPayments === []): ?>
-                <div class="empty-state">No payment references are waiting for review.</div>
-            <?php else: ?>
-                <div class="job-list">
-                    <?php foreach ($pendingUnlockPayments as $payment): ?>
-                        <article class="job-card">
-                            <h3><?= escape($payment['job_title']) ?></h3>
-                            <p><strong>Employer:</strong> <?= escape($payment['employer_name']) ?> (<?= escape($payment['employer_email']) ?>)</p>
-                            <p><strong>Amount:</strong> <?= (int) $payment['amount_xaf'] ?> XAF</p>
-                            <p><strong>MTN reference:</strong> <?= escape($payment['transaction_reference']) ?></p>
-                            <form class="stack" method="post" autocomplete="off">
-                                <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
-                                <input type="hidden" name="action" value="review_unlock_payment">
-                                <input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>">
-                                <div class="job-form-grid">
-                                    <button type="submit" name="decision" value="approve">Approve verified payment</button>
-                                    <button class="secondary" type="submit" name="decision" value="reject">Reject reference</button>
-                                </div>
-                            </form>
-                        </article>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
-        </section>
-    <?php endif; ?>
     <?php if ($view === 'jobs' || $view === 'dashboard'): ?>
         <section class="jobs-section" id="jobs">
             <div class="section-heading">
@@ -1636,6 +2058,14 @@ try {
                 </div>
                 <p class="muted"><?= $view === 'jobs' ? 'Explore current opportunities and check each listing’s availability before applying.' : 'Each listing shows whether it is available or has been taken.' ?></p>
             </div>
+            <?php if ($user !== null && $user['role'] === 'candidate' && !user_has_active_premium($user)): ?>
+                <p class="candidate-view-limit" role="status">
+                    You have viewed <?= $candidateJobViewCount ?> of <?= $candidateJobViewLimit ?> free jobs this month.
+                    <?php if ($candidateJobViewCount >= $candidateJobViewLimit): ?>
+                        Your allowance is used. <a href="index.php?page=dashboard#premium-title">Upgrade to Premium for more job views</a>.
+                    <?php endif; ?>
+                </p>
+            <?php endif; ?>
             <?php if (!$jobsLoaded): ?>
                 <div class="empty-state">Job listings are unavailable right now.</div>
             <?php elseif ($jobs === []): ?>
@@ -1690,7 +2120,7 @@ try {
                                 <?php elseif ($user !== null && $user['role'] === 'employer' && (int) $job['employer_id'] === (int) $user['id']): ?>
                                     <span class="muted">Your job</span>
                                 <?php elseif ($user === null && $jobStatus === 'available'): ?>
-                                    <a class="job-login-link" href="index.php?page=auth&amp;mode=login">Sign in as a candidate to apply</a>
+                                    <a class="job-login-link" href="index.php?page=auth&amp;mode=login">Sign in as a job seeker to apply</a>
                                 <?php endif; ?>
                             </div>
                             <?php if ($user !== null && $user['role'] === 'employer' && (int) $job['employer_id'] === (int) $user['id']): ?>
@@ -1720,49 +2150,14 @@ try {
                                                             <input type="hidden" name="action" value="hire_candidate">
                                                             <input type="hidden" name="job_id" value="<?= $jobId ?>">
                                                             <input type="hidden" name="candidate_id" value="<?= (int) $application['candidate_id'] ?>">
-                                                            <button type="submit">Select candidate</button>
+                                                            <button type="submit">Select job seeker</button>
                                                         </form>
                                                     <?php else: ?>
                                                         <span class="application-status"><?= escape(ucfirst((string) $application['status'])) ?></span>
                                                     <?php endif; ?>
                                                 <?php else: ?>
                                                     <div>
-                                                        <strong>Applicant details locked</strong>
-                                                        <div class="payment-instructions">
-                                                            <strong>Pay <?= (int) $unlockPriceXaf ?> XAF to view this employee's information</strong>
-                                                            <?php if ($paymentReceiverName !== '' && $paymentReceiver !== ''): ?>
-                                                                <span><strong>MTN MoMo recipient:</strong> <?= escape($paymentReceiverName) ?></span>
-                                                                <span><strong>Recipient number:</strong> <?= escape($paymentReceiver) ?></span>
-                                                                <span>Enter your Cameroon MTN number to receive a secure payment request on your phone.</span>
-                                                            <?php else: ?>
-                                                                <span>Payment recipient details are not configured. Please contact the site developer.</span>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                        <?php if ($application['latest_payment_status'] === 'pending' && $application['latest_payment_method'] === 'mtn_momo'): ?>
-                                                            <span class="application-status">Payment request sent to <?= escape($application['latest_payer_phone']) ?>. Approve it on your phone.</span>
-                                                            <form method="post">
-                                                                <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
-                                                                <input type="hidden" name="action" value="check_unlock_payment">
-                                                                <input type="hidden" name="payment_id" value="<?= (int) $application['latest_payment_id'] ?>">
-                                                                <button class="secondary" type="submit">Check payment status</button>
-                                                            </form>
-                                                        <?php elseif ($application['latest_payment_status'] === 'pending'): ?>
-                                                            <span class="application-status">Previous payment reference awaiting manual review.</span>
-                                                        <?php elseif (!$momoConfigured): ?>
-                                                            <span class="application-status">Automatic MTN payment is not set up on the server yet.</span>
-                                                            <button class="secondary" type="button" data-open-momo-demo>Enter MoMo phone number</button>
-                                                        <?php else: ?>
-                                                            <form class="stack" method="post" autocomplete="off">
-                                                                <input type="hidden" name="csrf_token" value="<?= escape(csrf_token()) ?>">
-                                                                <input type="hidden" name="action" value="start_unlock_payment">
-                                                                <input type="hidden" name="application_id" value="<?= (int) $application['application_id'] ?>">
-                                                                <div class="field">
-                                                                    <label for="payer-phone-<?= (int) $application['application_id'] ?>">Your MTN MoMo phone number</label>
-                                                                    <input id="payer-phone-<?= (int) $application['application_id'] ?>" name="payer_phone" type="tel" inputmode="tel" autocomplete="tel" pattern="(?:\+?237)?6[0-9]{8}" placeholder="682268179 or +237682268179" required>
-                                                                </div>
-                                                                <button type="submit">Request payment on my phone</button>
-                                                            </form>
-                                                        <?php endif; ?>
+                                                        <strong>Applicant details are visible once the employer has selected the job seeker.</strong>
                                                     </div>
                                                     <span class="application-status"><?= escape(ucfirst((string) $application['status'])) ?></span>
                                                 <?php endif; ?>
@@ -1777,6 +2172,41 @@ try {
             <?php endif; ?>
         </section>
     <?php endif; ?>
+    <?php if ($view === 'dashboard' && $user !== null && $user['role'] === 'employer' && $employerDashboardData !== null): ?>
+        <section class="chart-panel location-map-panel" aria-labelledby="job-location-map-title">
+            <div class="chart-heading">
+                <div>
+                    <h2 id="job-location-map-title">Job locations</h2>
+                    <p class="muted">Live map of your posted jobs</p>
+                </div>
+                <strong class="chart-total" data-map-count><?= count($employerDashboardData['map_jobs']) ?></strong>
+            </div>
+            <div class="location-map-layout">
+                <div id="employer-jobs-map" class="employer-jobs-map" role="region" aria-label="World map showing the locations of employer job listings">
+                    <svg class="world-map-art" viewBox="0 0 450 330" aria-hidden="true" focusable="false">
+                        <path d="M37 106 29 99 34 90 44 87 49 78 61 74 68 66 83 63 91 56 105 59 113 53 130 58 138 67 151 70 157 81 173 84 179 94 192 99 198 109 193 118 181 121 173 130 162 133 152 142 144 154 133 156 126 146 117 141 110 131 100 127 92 120 79 120 72 115 59 118 49 113zM139 119 146 126 153 137 150 151 158 163 156 178 165 190 161 204 168 217 162 232 165 248 156 262 152 280 145 295 139 284 138 268 131 255 132 239 124 227 126 211 119 198 123 183 117 170 122 156 117 145 124 135 120 127zM139 58 143 45 151 38 160 42 167 39 175 46 174 56 181 62 176 73 168 78 157 73 150 68 142 69zM194 108 202 97 214 95 221 100 230 96 237 101 246 100 253 104 266 100 276 106 290 103 300 108 314 108 324 115 337 116 345 122 357 123 367 130 380 132 388 138 399 142 405 150 398 157 389 154 381 159 371 154 362 157 352 150 342 152 334 145 326 147 318 139 307 142 299 135 288 138 280 131 269 134 261 126 249 130 242 123 232 129 223 125 218 117 208 121 204 114zM220 126 230 128 238 137 234 149 241 159 237 173 243 185 238 199 239 215 231 229 229 245 220 261 212 279 206 272 207 255 201 244 204 231 198 220 202 206 196 194 201 182 196 170 202 160 197 149 202 138 196 129zM238 139 247 137 255 141 260 150 256 159 246 160 240 154zM336 216 346 211 359 213 366 220 377 222 384 230 380 239 370 241 359 237 350 240 341 234 334 227zM202 81 204 75 208 79 206 85zM183 134 186 129 189 135 187 140zM303 161 306 157 309 163 307 168zM326 167 329 163 331 169 329 174zM103 129 108 126 111 132 106 136z" />
+                    </svg>
+                    <div class="world-map-heading">
+                        <span>Job locations</span>
+                        <span class="world-map-live"><i aria-hidden="true"></i> Live · 30s</span>
+                    </div>
+                    <svg class="world-map-connectors" viewBox="0 0 450 330" aria-hidden="true" focusable="false" data-map-connectors></svg>
+                    <div class="world-map-markers" data-map-markers></div>
+                    <div class="world-map-legend" aria-label="Job status legend">
+                        <span><i class="map-legend-available"></i>Available</span>
+                        <span><i class="map-legend-taken"></i>Taken</span>
+                        <span><i class="map-legend-total"></i>Job count</span>
+                    </div>
+                    <p class="world-map-caption">Select a location to see its jobs</p>
+                </div>
+                <aside class="location-map-sidebar" aria-label="Job locations">
+                    <p class="location-map-status" data-map-status role="status" aria-live="polite">Loading job locations…</p>
+                    <ul class="location-map-list" data-map-locations></ul>
+                    <p class="location-map-note" data-map-unmapped hidden></p>
+                </aside>
+            </div>
+        </section>
+    <?php endif; ?>
 </main>
 <?php if ($view !== 'landing'): ?>
         </div>
@@ -1788,30 +2218,8 @@ try {
     </svg>
     <span>Contact developer</span>
 </a>
-<footer class="site-footer" id="contact">SkillsPassAurora &middot; Proving What You Can Do</footer>
-<dialog class="momo-demo-dialog" data-momo-demo-dialog aria-labelledby="momo-demo-title">
-    <div class="momo-demo-content">
-        <button class="momo-demo-close" type="button" data-close-momo-demo aria-label="Close">&times;</button>
-        <p class="eyebrow">Demo only</p>
-        <h2 id="momo-demo-title">MTN MoMo payment</h2>
-        <p>Automatic payment is not configured on this server. You may enter your MoMo phone number below to preview the payment step.</p>
-        <label for="momo-demo-phone">Your MoMo phone number</label>
-        <input id="momo-demo-phone" type="tel" inputmode="tel" autocomplete="off" placeholder="682268179 or +237682268179">
-        <p class="momo-demo-warning">This demo does not send or save your number and will not make a payment. Never enter your MoMo PIN, password, or OTP on this website.</p>
-        <button class="secondary" type="button" disabled>Payment unavailable</button>
-    </div>
-</dialog>
+<footer class="site-footer" id="contact">SkillsPassAurora &middot; Your Skills Are Not Useless</footer>
 <script>
-const momoDemoDialog = document.querySelector('[data-momo-demo-dialog]');
-if (momoDemoDialog instanceof HTMLDialogElement) {
-    document.querySelectorAll('[data-open-momo-demo]').forEach((button) => {
-        button.addEventListener('click', () => momoDemoDialog.showModal());
-    });
-    momoDemoDialog.querySelector('[data-close-momo-demo]')?.addEventListener('click', () => momoDemoDialog.close());
-    momoDemoDialog.addEventListener('click', (event) => {
-        if (event.target === momoDemoDialog) momoDemoDialog.close();
-    });
-}
 
 document.querySelectorAll('[data-password-toggle]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -1921,11 +2329,58 @@ const dashboardDataElement = document.getElementById('employer-dashboard-data');
 if (dashboardDataElement) {
     const trendChart = document.querySelector('[data-chart="trend"]');
     const statusChart = document.querySelector('[data-chart="status"]');
+    const mapStatus = document.querySelector('[data-map-status]');
+    const mapCount = document.querySelector('[data-map-count]');
+    const mapLocations = document.querySelector('[data-map-locations]');
+    const mapUnmapped = document.querySelector('[data-map-unmapped]');
+    const mapMarkers = document.querySelector('[data-map-markers]');
+    const mapConnectors = document.querySelector('[data-map-connectors]');
     const liveStatus = document.querySelector('[data-chart-status]');
     const refreshButton = document.querySelector('[data-chart-refresh]');
     const svgNamespace = 'http://www.w3.org/2000/svg';
     let dashboardData;
     let refreshInProgress = false;
+
+    const cameroonCities = {
+        buea: { label: 'Buea', coordinates: [4.1527, 9.241] },
+        tiko: { label: 'Tiko', coordinates: [4.075, 9.36] },
+        yaounde: { label: 'Yaounde', coordinates: [3.848, 11.5021] },
+        douala: { label: 'Douala', coordinates: [4.0511, 9.7679] },
+        limbe: { label: 'Limbe', coordinates: [4.0236, 9.2068] },
+        bamenda: { label: 'Bamenda', coordinates: [5.9631, 10.1591] },
+        bafoussam: { label: 'Bafoussam', coordinates: [5.4781, 10.4175] },
+        garoua: { label: 'Garoua', coordinates: [9.3014, 13.3977] },
+        maroua: { label: 'Maroua', coordinates: [10.591, 14.3159] },
+        ngaoundere: { label: 'Ngaoundere', coordinates: [7.3277, 13.5847] },
+        bertoua: { label: 'Bertoua', coordinates: [4.5773, 13.6846] },
+        ebolowa: { label: 'Ebolowa', coordinates: [2.9, 11.15] },
+        kumba: { label: 'Kumba', coordinates: [4.6373, 9.4469] },
+        kribi: { label: 'Kribi', coordinates: [2.94, 9.91] },
+        dschang: { label: 'Dschang', coordinates: [5.444, 10.053] },
+        foumban: { label: 'Foumban', coordinates: [5.726, 10.898] },
+        bafang: { label: 'Bafang', coordinates: [5.157, 10.177] },
+        kumbo: { label: 'Kumbo', coordinates: [6.2, 10.67] },
+    };
+    const cityOffsets = {
+        buea: [-21, -12],
+        tiko: [10, 8],
+        yaounde: [24, -11],
+        douala: [-2, 14],
+        limbe: [-24, 7],
+        bamenda: [-6, -22],
+        bafoussam: [-33, -11],
+        garoua: [-13, -24],
+        maroua: [12, -22],
+        ngaoundere: [25, -5],
+        bertoua: [28, 10],
+        ebolowa: [20, 22],
+        kumba: [-24, 19],
+        kribi: [2, 28],
+        dschang: [-36, -20],
+        foumban: [-38, -2],
+        bafang: [-38, 13],
+        kumbo: [-43, -25],
+    };
 
     const addChartElement = (chart, name, attributes = {}, text = '') => {
         const element = document.createElementNS(svgNamespace, name);
@@ -1945,7 +2400,159 @@ if (dashboardDataElement) {
             && data.trend.every((point) => typeof point.label === 'string'
                 && typeof point.date === 'string'
                 && Number.isInteger(point.total)
-                && point.total >= 0);
+                && point.total >= 0)
+            && Array.isArray(data.map_jobs)
+            && data.map_jobs.every((job) => Number.isInteger(job.id)
+                && job.id > 0
+                && typeof job.title === 'string'
+                && typeof job.location === 'string'
+                && ['available', 'taken'].includes(job.status));
+    };
+
+    const normalizeLocation = (location) => location
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    const coordinatesForLocation = (location) => {
+        const normalized = normalizeLocation(location);
+        const explicitCoordinates = location.trim().match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)$/);
+        if (explicitCoordinates) {
+            const latitude = Number(explicitCoordinates[1]);
+            const longitude = Number(explicitCoordinates[2]);
+            if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+                return { label: location, key: `${latitude.toFixed(5)},${longitude.toFixed(5)}`, coordinates: [latitude, longitude] };
+            }
+        }
+
+        const cityEntry = Object.entries(cameroonCities).find(([, candidate]) => {
+            const normalizedCity = normalizeLocation(candidate.label);
+            return normalized === normalizedCity || normalized.startsWith(`${normalizedCity} `);
+        });
+        if (!cityEntry) return null;
+        const [key, city] = cityEntry;
+        return { ...city, key };
+    };
+
+    const selectMapLocation = (key) => {
+        const selectedPoint = [...mapMarkers.children].find((point) => point.dataset.locationKey === key);
+        if (!selectedPoint) return;
+
+        mapMarkers.querySelectorAll('.map-location-point').forEach((point) => {
+            const isSelected = point === selectedPoint;
+            point.classList.toggle('is-selected', isSelected);
+            point.querySelector('.map-location-chip').setAttribute('aria-expanded', String(isSelected));
+            point.querySelector('.map-location-tooltip').hidden = !isSelected;
+        });
+        mapLocations.querySelectorAll('.location-map-item').forEach((button) => {
+            button.classList.toggle('is-selected', button.dataset.locationKey === key);
+        });
+        mapStatus.textContent = `${selectedPoint.dataset.locationLabel} · ${selectedPoint.dataset.jobCount} jobs · Select another location or refresh to update`;
+    };
+
+    const renderJobMap = (data) => {
+        if (mapCount) mapCount.textContent = String(data.map_jobs.length);
+        if (!mapMarkers || !mapConnectors || !mapLocations || !mapStatus) return;
+
+        mapMarkers.replaceChildren();
+        mapConnectors.replaceChildren();
+        mapLocations.replaceChildren();
+        if (mapUnmapped) {
+            mapUnmapped.hidden = true;
+            mapUnmapped.textContent = '';
+        }
+
+        const groupedLocations = new Map();
+        const unmappedJobs = [];
+        data.map_jobs.forEach((job) => {
+            const resolved = coordinatesForLocation(job.location);
+            if (!resolved) {
+                unmappedJobs.push(job);
+                return;
+            }
+            if (!groupedLocations.has(resolved.key)) {
+                groupedLocations.set(resolved.key, { ...resolved, jobs: [] });
+            }
+            groupedLocations.get(resolved.key).jobs.push(job);
+        });
+
+        const locationGroups = [...groupedLocations.values()];
+        locationGroups.forEach((group, index) => {
+            const [latitude, longitude] = group.coordinates;
+            const trueX = ((longitude + 180) / 360) * 450;
+            const trueY = ((90 - latitude) / 180) * 330;
+            const offset = cityOffsets[group.key] || [8 + (index % 3) * 6, -10 + (index % 2) * 9];
+            const markerX = trueX + offset[0];
+            const markerY = trueY + offset[1];
+            const availableCount = group.jobs.filter((job) => job.status === 'available').length;
+            const takenCount = group.jobs.length - availableCount;
+            const statusClass = availableCount > 0 && takenCount > 0
+                ? 'is-mixed'
+                : (availableCount > 0 ? 'is-available' : 'is-taken');
+
+            addChartElement(mapConnectors, 'line', {
+                x1: trueX,
+                y1: trueY,
+                x2: markerX,
+                y2: markerY,
+            });
+
+            const point = document.createElement('div');
+            point.className = 'map-location-point';
+            point.dataset.locationKey = group.key;
+            point.dataset.locationLabel = group.label;
+            point.dataset.jobCount = String(group.jobs.length);
+            point.style.left = `${(markerX / 450) * 100}%`;
+            point.style.top = `${(markerY / 330) * 100}%`;
+
+            const locationButton = document.createElement('button');
+            locationButton.type = 'button';
+            locationButton.className = `map-location-chip ${statusClass}`;
+            locationButton.setAttribute('aria-expanded', 'false');
+            locationButton.setAttribute('aria-label', `${group.label}: ${group.jobs.length} jobs. Select to view job titles.`);
+            const locationName = document.createElement('span');
+            locationName.textContent = group.label;
+            const jobCount = document.createElement('span');
+            jobCount.className = 'map-location-chip-count';
+            jobCount.textContent = String(group.jobs.length);
+            locationButton.append(locationName, jobCount);
+            locationButton.addEventListener('click', () => selectMapLocation(group.key));
+
+            const details = document.createElement('div');
+            details.className = 'map-location-tooltip';
+            details.hidden = true;
+            const locationHeading = document.createElement('strong');
+            locationHeading.textContent = group.label;
+            details.append(locationHeading);
+            group.jobs.forEach((job) => {
+                const listing = document.createElement('span');
+                listing.textContent = `${job.title} · ${job.status === 'available' ? 'Available' : 'Taken'}`;
+                details.append(listing);
+            });
+            point.append(locationButton, details);
+            mapMarkers.append(point);
+
+            const listButton = document.createElement('button');
+            listButton.type = 'button';
+            listButton.className = 'location-map-item';
+            listButton.dataset.locationKey = group.key;
+            listButton.textContent = `${group.label} · ${group.jobs.length} job${group.jobs.length === 1 ? '' : 's'}`;
+            listButton.addEventListener('click', () => {
+                selectMapLocation(group.key);
+                locationButton.focus();
+            });
+            mapLocations.append(listButton);
+        });
+
+        if (unmappedJobs.length > 0 && mapUnmapped) {
+            mapUnmapped.hidden = false;
+            mapUnmapped.textContent = `Not mapped: ${unmappedJobs.map((job) => `${job.title} (${job.location})`).join(', ')}. Add a supported city or latitude and longitude to show these jobs on the map.`;
+        }
+        mapStatus.textContent = data.map_jobs.length === 0
+            ? 'No job locations yet.'
+            : `${data.map_jobs.length} job${data.map_jobs.length === 1 ? '' : 's'} · ${locationGroups.length} mapped location${locationGroups.length === 1 ? '' : 's'}${unmappedJobs.length > 0 ? ` · ${unmappedJobs.length} unmapped` : ''} · Updated ${new Date().toLocaleTimeString()}`;
     };
 
     const renderTrendChart = (data) => {
@@ -1959,6 +2566,25 @@ if (dashboardDataElement) {
         const right = 620;
         const top = 24;
         const bottom = 190;
+        const definitions = addChartElement(chart, 'defs');
+        const areaGradient = addChartElement(definitions, 'linearGradient', {
+            id: 'trend-area-gradient',
+            x1: 0,
+            y1: 0,
+            x2: 0,
+            y2: 1,
+        });
+        addChartElement(areaGradient, 'stop', { offset: '0%', 'stop-color': '#8975f5', 'stop-opacity': '.42' });
+        addChartElement(areaGradient, 'stop', { offset: '100%', 'stop-color': '#55a9e8', 'stop-opacity': '.02' });
+        const lineGradient = addChartElement(definitions, 'linearGradient', {
+            id: 'trend-line-gradient',
+            x1: 0,
+            y1: 0,
+            x2: 1,
+            y2: 0,
+        });
+        addChartElement(lineGradient, 'stop', { offset: '0%', 'stop-color': '#8975f5' });
+        addChartElement(lineGradient, 'stop', { offset: '100%', 'stop-color': '#55c9d8' });
         const values = data.trend.map((point) => point.total);
         const maximum = Math.max(...values, 1);
         [0, Math.ceil(maximum / 2), maximum].forEach((value) => {
@@ -1967,14 +2593,21 @@ if (dashboardDataElement) {
             addChartElement(chart, 'text', { x: left - 12, y: y + 4, 'text-anchor': 'end' }, value);
         });
 
-        const points = data.trend.map((point, index) => {
+        const coordinates = data.trend.map((point, index) => {
             const x = left + (index * (right - left)) / (data.trend.length - 1);
             const y = bottom - (point.total / maximum) * (bottom - top);
             addChartElement(chart, 'text', { x, y: bottom + 25, 'text-anchor': 'middle' }, point.label);
-            addChartElement(chart, 'circle', { cx: x, cy: y, r: 5, class: 'chart-point' });
-            return `${x},${y}`;
+            return { x, y };
+        });
+        const points = coordinates.map(({ x, y }) => `${x},${y}`);
+        addChartElement(chart, 'polygon', {
+            points: `${left},${bottom} ${points.join(' ')} ${right},${bottom}`,
+            class: 'chart-area',
         });
         addChartElement(chart, 'polyline', { points: points.join(' '), class: 'chart-line' });
+        coordinates.forEach(({ x, y }) => {
+            addChartElement(chart, 'circle', { cx: x, cy: y, r: 5, class: 'chart-point' });
+        });
 
         if (values.every((value) => value === 0)) {
             addChartElement(chart, 'text', { x: (left + right) / 2, y: 112, class: 'chart-no-data' }, 'No applications in the last 7 days');
@@ -2021,6 +2654,7 @@ if (dashboardDataElement) {
         document.querySelector('[data-trend-total]').textContent = data.trend.reduce((total, point) => total + point.total, 0);
         renderTrendChart(data);
         renderStatusChart(data);
+        renderJobMap(data);
     };
 
     try {

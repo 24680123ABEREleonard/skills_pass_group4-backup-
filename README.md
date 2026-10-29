@@ -1,6 +1,14 @@
 # SkillsPassAurora
 
-A PHP and MySQL two-sided hiring marketplace for candidates and employers. Users can register and sign in without email verification. After 10 incorrect password attempts for an account, the next correct-password sign-in requires an email OTP. Employers can post jobs, review applicants, and select a candidate; new jobs are marked Available and are automatically marked Taken when a candidate is selected. Candidates can browse jobs and apply. Passwords and OTPs are hashed, OTPs expire after 10 minutes, and OTP attempts and resend frequency are limited.
+**Your skills are not useless.** SkillsPassAurora is a PHP and MySQL hiring marketplace for employers and job seekers. Employers can post jobs, review job seekers, and hire from a shared dashboard. Job seekers can browse jobs, apply with a required cover letter, and manage their public profile. User authentication uses secure password hashing and OTP-based sign-in verification after repeated failed attempts. The platform is designed around premium access limits rather than applicant unlock payments.
+
+## System presentation
+
+Open `presentation.html` in a browser to view the 16-slide system walkthrough. Use the slide-number links or side-mounted previous/next controls to navigate. Slides 14–16 show screenshots of the source code for the live dashboard charts, employer job map, and digital wallet. The walkthrough can be printed or saved as PDF from the browser.
+
+## Employer live job map
+
+The employer dashboard displays its job-location map after the job listings. The dark, illustrated world map is inspired by the dashboard design reference and plots only the employer's own jobs. Colored city labels show job counts and availability; selecting a label shows its jobs. Map data refreshes with the dashboard every 30 seconds. The map recognizes common Cameroon city names and accepts a latitude/longitude pair in a job's location field. Unrecognized or remote locations are listed as unmapped instead of being placed inaccurately. The map artwork is rendered locally and does not depend on third-party map tiles.
 
 ## Requirements
 
@@ -11,13 +19,11 @@ A PHP and MySQL two-sided hiring marketplace for candidates and employers. Users
 
 ## Setup
 
-1. Import `schema.sql` into MySQL. It creates and uses the `aurora_group3` database. If you already have that database, import the file there to create any missing marketplace tables.
-2. If you already have a database, re-import `schema.sql` to add any missing columns and tables. It adds the profile-picture storage, failed-login counter, and application cover-letter, experience, and portfolio-link fields without replacing existing records. Existing email-verification columns can remain; they are no longer used.
+1. Import `schema.sql` into MySQL for a fresh installation or to update an existing installation. This is the project's only SQL file; it creates and uses the `aurora_group3` database, includes marketplace and Premium payment tables, and preserves existing records. Its unsigned 64-bit auto-increment IDs support more than one million users; actual capacity depends on database storage and server resources.
 3. Configure `DB_HOST`, `DB_NAME`, `DB_USER`, and `DB_PASS` in your environment. Defaults are `127.0.0.1`, `aurora_group3`, `root`, and an empty password.
 4. Run `composer install` from this directory to install PHPMailer.
 5. For Gmail, enable 2-Step Verification and create an app password in your Google Account. Do not use your regular Gmail password. Set the SMTP environment variables below on the machine running PHP/Apache. `SMTP_PASS` must contain the Google app password; never commit it to source control.
 6. From this directory, start the local server with `php -S localhost:8000` and open `http://localhost:8000`.
-7. To enable automatic MTN MoMo Collection payments, onboard the merchant with MTN MoMo Developer and configure `MTN_MOMO_BASE_URL`, `MTN_MOMO_TARGET_ENVIRONMENT`, `MTN_MOMO_SUBSCRIPTION_KEY`, `MTN_MOMO_API_USER`, and `MTN_MOMO_API_KEY` on the server. Use the MTN-approved production endpoint and target environment for a live merchant; use the sandbox endpoint and `sandbox` target only for sandbox testing. Keep API credentials in server environment settings, never in source control or chat. Configure `MTN_MOMO_RECEIVER` and `MTN_MOMO_RECEIVER_NAME` for the recipient details shown to employers; defaults are `682268179` and `VIVIAN MANYI TANYI`. Import `schema.sql` to add the automatic-payment method and payer-phone columns. The employer enters their Cameroon MTN number, receives a 300 XAF Request-to-Pay prompt on that phone, and checks its status in the app. Applicant details unlock only after the Collection API reports a successful payment. The merchant destination is the settlement account associated with the MTN Collection API credentials; the displayed receiver number should match the merchant's verified receiving account.
 
 Windows PowerShell example:
 
@@ -29,18 +35,36 @@ $env:SMTP_PORT = '587'
 $env:SMTP_USER = 'your-account@gmail.com'
 $env:SMTP_PASS = 'your-google-app-password'
 $env:SMTP_FROM = 'your-account@gmail.com'
-$env:MTN_MOMO_RECEIVER_NAME = 'VIVIAN MANYI TANYI'
-$env:MTN_MOMO_RECEIVER = '682268179'
-$env:MTN_MOMO_BASE_URL = 'https://sandbox.momodeveloper.mtn.com'
-$env:MTN_MOMO_TARGET_ENVIRONMENT = 'sandbox'
-$env:MTN_MOMO_SUBSCRIPTION_KEY = 'configure-on-server'
-$env:MTN_MOMO_API_USER = 'configure-on-server'
-$env:MTN_MOMO_API_KEY = 'configure-on-server'
 php -S localhost:8000
 ```
 
-For XAMPP Apache, add the MTN variables as Windows user or system environment variables, then fully restart Apache from the XAMPP Control Panel so PHP can read them. Do not use the example sandbox settings for live payments. A payer request is sent to the employer's phone; the actual receiving account is determined by the merchant's MTN Collection API enrollment. SMTP is only used for login security codes after 10 failed password attempts. Codes expire after 10 minutes, allow at most five attempts, and can be resent no more than once per minute. If SMTP is not configured or Gmail rejects delivery, the app shows an email-delivery message and writes the transport failure to Apache's error log; it does not expose OTP codes.
+SMTP is only used for login security codes after 10 failed password attempts. Codes expire after 10 minutes, allow at most five attempts, and can be resent no more than once per minute. If SMTP is not configured or Gmail rejects delivery, the app shows an email-delivery message and writes the transport failure to Apache's error log; it does not expose OTP codes.
 
-All signed-in users can view and update their account profile and upload a profile picture. Each account has a shareable public profile showing the user's name, account type, member date, and profile picture; email addresses and private application information are not shown on public profiles. Profile pictures must be JPEG, PNG, or WebP, no larger than 2 MB. Re-import `schema.sql` into an existing database to add the required profile-picture columns.
+## Premium access model
 
-Employees applying for a job must submit a cover letter. They can also include relevant experience and an HTTP/HTTPS portfolio link. Employers can review the submitted details in their job's Applicants section.
+The marketplace enforces premium limits instead of payment-gated applicant unlocks:
+
+- Employers can post up to 8 active jobs on the free plan.
+- Job seekers can view up to 8 distinct jobs per month on the free plan.
+- Users with `is_premium = 1` and a valid `premium_expires_at` value can exceed those limits.
+- A 500 XAF MTN MoMo top-up credits the user's in-app wallet only after the provider confirms the matching successful transaction.
+- Wallet funds can be used only to purchase 50 days of Premium; users cannot withdraw wallet funds.
+- Premium activates after a transaction atomically debits 500 XAF from the wallet and extends the user's Premium expiry.
+
+## MTN MoMo sandbox wallet top-ups
+
+The current integration is sandbox-only and uses MTN MoMo Collection API. Sandbox top-ups do not charge real money and must not be treated as a live payment service. Configure sandbox credentials in the Apache/PHP environment, never in source files or the database:
+
+```powershell
+$env:MTN_MOMO_SUBSCRIPTION_KEY = 'your-sandbox-subscription-key'
+$env:MTN_MOMO_API_USER = 'your-sandbox-api-user'
+$env:MTN_MOMO_API_KEY = 'your-sandbox-api-key'
+```
+
+Create these values through the MTN MoMo developer portal and use a supported Cameroon sandbox test number. The app requests an XAF 500 wallet top-up; after the provider reports `SUCCESSFUL`, it verifies the amount, currency, and external reference before crediting the wallet exactly once. Users then make a separate wallet debit to buy Premium. Pending top-ups remain pending until checked against MTN; a second top-up is blocked while one is pending to reduce duplicate charges. No provider credentials are included in this repository.
+
+Live payments are not enabled. Production requires an approved MTN merchant account, separate live credentials, provider approval, HTTPS, operational monitoring, and a compliance review. The application is intentionally pinned to MTN's sandbox endpoint until that work is completed.
+
+All signed-in users can view and update their account profile and upload a profile picture. Each account has a shareable public profile showing the user's name, account type, member date, and profile picture; email addresses and private application information are not shown on public profiles. Profile pictures must be JPEG, PNG, or WebP, no larger than 2 MB. Re-import `schema.sql` into an existing database to add any missing supported columns and tables without replacing its records.
+
+Job seekers applying for a job must submit a cover letter. They can also include relevant experience and an HTTP/HTTPS portfolio link. Employers can review the submitted details in their job's Applicants section.
